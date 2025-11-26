@@ -67,12 +67,6 @@ public class RhythmGameController : MonoBehaviour
         if (RhythmGameManager.Instance != null)
         {
             RhythmGameManager.Instance.StartSong();
-
-            // Start note spawning if available
-            if (noteSpawner != null)
-            {
-                noteSpawner.StartSpawning();
-            }
         }
     }
 }

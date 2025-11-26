@@ -32,12 +32,14 @@ public class NoteSpawner : MonoBehaviour
 
     void Update()
     {
-        if (isSpawning && currentEventIndex < spawnEvents.Count)
+        // Only spawn notes if the game is actively playing
+        if (isSpawning && currentEventIndex < spawnEvents.Count && RhythmGameManager.Instance.isPlaying)
         {
             SpawnEvent nextEvent = spawnEvents[currentEventIndex];
             float nextEventTime = RhythmGameManager.Instance.BeatToTime(nextEvent.beatNumber);
 
             // Check if it's time to spawn the next note
+            // Use the actual song position to determine when to spawn
             if (RhythmGameManager.Instance.songPosition + RhythmGameManager.Instance.spawnOffset >= nextEventTime)
             {
                 SpawnNote(nextEvent);

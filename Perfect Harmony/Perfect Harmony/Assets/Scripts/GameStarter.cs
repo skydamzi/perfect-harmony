@@ -17,15 +17,15 @@ public class GameStarter : MonoBehaviour
     {
         yield return new WaitForEndOfFrame();
 
-        // Then start the game after ensuring singletons are initialized
-        if(RhythmGameController.Instance != null)
+        // Start the countdown before the game begins
+        if(RhythmGameManager.Instance != null)
         {
-            RhythmGameController.Instance.StartGame();
-            Debug.Log("Game started successfully!");
+            RhythmGameManager.Instance.StartCountdown();
+            Debug.Log("Countdown started. Game will start in 3 seconds!");
         }
         else
         {
-            Debug.LogError("RhythmGameController instance not found!");
+            Debug.LogError("RhythmGameManager instance not found!");
         }
     }
 

@@ -23,7 +23,8 @@ public class FallingNote : MonoBehaviour
         spawnTime = Time.time;
 
         // Calculate when this note should reach the target based on beat number
-        targetTime = RhythmGameManager.Instance.BeatToTime(beatNumber);
+        // Add the delay time to get the actual target time
+        targetTime = RhythmGameManager.Instance.actualSongStartTime + RhythmGameManager.Instance.BeatToTime(beatNumber);
 
         // Set the initial position to the spawn position if available
         if (spawnPosition != null)
@@ -45,16 +46,21 @@ public class FallingNote : MonoBehaviour
         {
             // Calculate the current song time relative to when this note should appear
             float currentTime = Time.time;
-            float noteAppearTime = RhythmGameManager.Instance.BeatToTime(beatNumber) - RhythmGameManager.Instance.spawnOffset;
-            float noteTargetTime = RhythmGameManager.Instance.BeatToTime(beatNumber);
+            // Calculate when this note should appear based on its beat number from the actual song start
+            float noteAppearTimeInSong = RhythmGameManager.Instance.BeatToTime(beatNumber) - RhythmGameManager.Instance.spawnOffset;
+            // Add the delay time to when the song actually started to get the actual appearance time
+            float actualNoteAppearTime = RhythmGameManager.Instance.actualSongStartTime + noteAppearTimeInSong;
 
-            if (currentTime >= noteAppearTime)
+            float noteTargetTimeInSong = RhythmGameManager.Instance.BeatToTime(beatNumber);
+            float actualNoteTargetTime = RhythmGameManager.Instance.actualSongStartTime + noteTargetTimeInSong;
+
+            if (currentTime >= actualNoteAppearTime)
             {
                 // Calculate the time duration for the note to travel from spawn to target
                 float travelDuration = RhythmGameManager.Instance.spawnOffset; // Time from spawn to target
 
                 // Calculate progress from 0 to 1 over the travel duration
-                float timeSinceAppear = currentTime - noteAppearTime;
+                float timeSinceAppear = currentTime - actualNoteAppearTime;
                 float progress = timeSinceAppear / travelDuration;
 
                 // Clamp progress between 0 and 1 to prevent going past target
@@ -63,7 +69,7 @@ public class FallingNote : MonoBehaviour
                 transform.position = Vector3.Lerp(spawnPosition.position, targetPosition.position, progress);
 
                 // Check if note is missed based on target time
-                if (currentTime > noteTargetTime + RhythmGameManager.Instance.okayWindow && !isMissed)
+                if (currentTime > actualNoteTargetTime + RhythmGameManager.Instance.okayWindow && !isMissed)
                 {
                     MissNote();
                 }
