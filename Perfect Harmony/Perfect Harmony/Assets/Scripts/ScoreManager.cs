@@ -17,8 +17,8 @@ public class ScoreManager : MonoBehaviour
     public int comboMultiplier = 1;
     public int maxCombo = 0;
 
-    private int currentScore = 0;
-    private int currentCombo = 0;
+    public int currentScore = 0;
+    public int currentCombo = 0;
     private int totalNotesHit = 0;
     private int totalNotesMissed = 0;
 
@@ -57,6 +57,14 @@ public class ScoreManager : MonoBehaviour
         // Update UI
         UpdateUI();
         ShowTimingFeedback(timingResult);
+
+        // Check if we're in multiplayer mode
+        MultiplayerManager mpManager = FindFirstObjectByType<MultiplayerManager>();
+        if (mpManager != null && mpManager.gameStarted)
+        {
+            // Send score update to server
+            mpManager.SendPlayerScore(currentScore, currentCombo, timingResult);
+        }
     }
 
     // Process a missed note
@@ -68,6 +76,14 @@ public class ScoreManager : MonoBehaviour
         // Update UI
         UpdateUI();
         ShowTimingFeedback(TimingResult.Miss);
+
+        // Check if we're in multiplayer mode
+        MultiplayerManager mpManager = FindFirstObjectByType<MultiplayerManager>();
+        if (mpManager != null && mpManager.gameStarted)
+        {
+            // Send score update to server (combo is 0 after a miss)
+            mpManager.SendPlayerScore(currentScore, currentCombo, TimingResult.Miss);
+        }
     }
 
     // Update UI elements with current values

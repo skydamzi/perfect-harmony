@@ -220,6 +220,7 @@ public class AutoSetup : MonoBehaviour
         }
     }
 
+
     void SetupGameStarter()
     {
         GameStarter gameStarter = FindFirstObjectByType<GameStarter>();

@@ -17,6 +17,55 @@ public class FallingNote : MonoBehaviour
     public bool isHit = false;
     public bool isMissed = false;
 
+    // OnNoteHit method that should be called from external components
+    public void OnNoteHit(TimingResult timingResult)
+    {
+        if (!isHit && !isMissed)
+        {
+            isHit = true;
+
+            // Trigger sprite effect based on timing result
+            if (SpriteEffectManager.Instance != null)
+            {
+                SpriteEffectManager.Instance.SpawnHitSprites(timingResult, transform.position);
+            }
+
+            // Notify input handler to unregister this note
+            if (InputHandler.Instance != null)
+            {
+                InputHandler.Instance.UnregisterNote(this);
+            }
+
+            // Report hit to game manager
+            if (RhythmGameController.Instance != null)
+            {
+                RhythmGameController.Instance.OnNoteHit(timingResult, this);
+            }
+
+            // Visual/auditory feedback based on timing
+            // Change color based on timing result
+            SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
+            if (spriteRenderer != null)
+            {
+                switch (timingResult)
+                {
+                    case TimingResult.Perfect:
+                        spriteRenderer.color = Color.yellow; // Perfect hits show yellow
+                        break;
+                    case TimingResult.Good:
+                        spriteRenderer.color = Color.green; // Good hits show green
+                        break;
+                    case TimingResult.Okay:
+                        spriteRenderer.color = Color.blue; // Okay hits show blue
+                        break;
+                }
+            }
+
+            // Destroy the note after a short delay
+            Destroy(gameObject, 0.1f);
+        }
+    }
+
     void Start()
     {
         startTime = Time.time;
@@ -80,18 +129,8 @@ public class FallingNote : MonoBehaviour
     // Called when player hits the note at the right time
     public void HitNote(TimingResult timingResult)
     {
-        if (isHit || isMissed) return;
-
-        isHit = true;
-
-        // Report hit to game manager
-        RhythmGameController.Instance.OnNoteHit(timingResult, this);
-
-        // Visual/auditory feedback based on timing
-        HandleHitVisuals(timingResult);
-
-        // Destroy the note after a short delay
-        Destroy(gameObject, 0.1f);
+        // Simply call OnNoteHit since it contains all the required logic
+        OnNoteHit(timingResult);
     }
 
     // Called when the note goes past the hit window without being hit
@@ -100,6 +139,12 @@ public class FallingNote : MonoBehaviour
         if (isHit || isMissed) return;
 
         isMissed = true;
+
+        // Notify input handler to unregister this note
+        if (InputHandler.Instance != null)
+        {
+            InputHandler.Instance.UnregisterNote(this);
+        }
 
         // Report miss to game manager
         RhythmGameController.Instance.OnNoteMissed(this);

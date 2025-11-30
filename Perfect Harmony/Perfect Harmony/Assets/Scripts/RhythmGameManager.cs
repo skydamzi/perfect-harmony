@@ -125,11 +125,30 @@ public class RhythmGameManager : MonoBehaviour
         actualSongStartTime = Time.time; // The actual time when the song starts after the delay
         songPosition = 0f; // Reset song position to 0 at start
 
-        // Start note spawning after the song officially starts
-        NoteSpawner noteSpawner = FindFirstObjectByType<NoteSpawner>();
-        if (noteSpawner != null)
+        // Check if we're in multiplayer mode
+        MultiplayerManager mpManager = FindFirstObjectByType<MultiplayerManager>();
+        if (mpManager != null && mpManager.gameStarted)
         {
-            noteSpawner.StartSpawning();
+            // In multiplayer mode, note spawning is handled by the server
+            if (mpManager.isHost)
+            {
+                // If we're the host, start the note spawner
+                NoteSpawner noteSpawner = FindFirstObjectByType<NoteSpawner>();
+                if (noteSpawner != null)
+                {
+                    noteSpawner.StartSpawning();
+                }
+            }
+            // Clients will receive note spawn commands from the server
+        }
+        else
+        {
+            // Single player mode - start the note spawner normally
+            NoteSpawner noteSpawner = FindFirstObjectByType<NoteSpawner>();
+            if (noteSpawner != null)
+            {
+                noteSpawner.StartSpawning();
+            }
         }
     }
 

@@ -105,6 +105,19 @@ public class NoteSpawner : MonoBehaviour
             inputHandler.AddNoteToLane(note, spawnEvent.lane);
             inputHandler.AddNoteToFallingList(note);
         }
+
+        // Check if we're in multiplayer mode and are the host
+        MultiplayerManager mpManager = FindFirstObjectByType<MultiplayerManager>();
+        GameStateSyncManager gameStateSyncManager = FindFirstObjectByType<GameStateSyncManager>();
+        if (mpManager != null && mpManager.isHost && mpManager.gameStarted)
+        {
+            // Send the note spawn event to other players
+            if (gameStateSyncManager != null)
+            {
+                NoteData noteData = new NoteData(spawnEvent.beatNumber, laneIndex, note.spawnTime);
+                gameStateSyncManager.SendNoteSpawn(noteData);
+            }
+        }
     }
     
     // Add a new spawn event

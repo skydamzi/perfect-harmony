@@ -18,12 +18,10 @@ public class InputHandler : MonoBehaviour
         if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
+            return;
         }
-        else
-        {
-            Instance = this;
-            DontDestroyOnLoad(gameObject);
-        }
+        Instance = this;
+        DontDestroyOnLoad(gameObject);
     }
 
     void Start()
@@ -50,7 +48,32 @@ public class InputHandler : MonoBehaviour
             if (Input.GetKeyDown(laneKeys[i]))
             {
                 NoteLane lane = (NoteLane)i;
-                ProcessLaneInput(lane);
+
+                // Check if we're in multiplayer mode
+                MultiplayerManager mpManager = FindFirstObjectByType<MultiplayerManager>();
+                if (mpManager != null && mpManager.gameStarted)
+                {
+                    // Send input to server in multiplayer mode
+                    MultiplayerInputHandler mpInputHandler = FindFirstObjectByType<MultiplayerInputHandler>();
+                    if (mpInputHandler != null)
+                    {
+                        mpInputHandler.ProcessLocalInput(i);
+                    }
+                    else
+                    {
+                        // Fallback: process locally but also send to server
+                        ProcessLaneInput(lane);
+                        if (mpManager.udpManager != null)
+                        {
+                            mpManager.SendPlayerInput(i, Time.time);
+                        }
+                    }
+                }
+                else
+                {
+                    // Single player mode - process normally
+                    ProcessLaneInput(lane);
+                }
             }
         }
     }
@@ -140,6 +163,26 @@ public class InputHandler : MonoBehaviour
 
     // Remove a note from the active list when it's destroyed
     public void RemoveNote(FallingNote note)
+    {
+        NoteLane lane = note.lane;
+        if ((int)lane < activeNotesInLanes.Length)
+        {
+            activeNotesInLanes[(int)lane].Remove(note);
+        }
+    }
+
+    // Get active notes in a specific lane (for multiplayer)
+    public List<FallingNote> GetActiveNotesInLane(NoteLane lane)
+    {
+        if ((int)lane < activeNotesInLanes.Length)
+        {
+            return activeNotesInLanes[(int)lane];
+        }
+        return new List<FallingNote>(); // Return empty list if out of bounds
+    }
+
+    // Unregister a note (added for FallingNote compatibility)
+    public void UnregisterNote(FallingNote note)
     {
         NoteLane lane = note.lane;
         if ((int)lane < activeNotesInLanes.Length)
