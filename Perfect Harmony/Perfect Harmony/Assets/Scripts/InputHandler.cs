@@ -11,6 +11,8 @@ public class InputHandler : MonoBehaviour
     [Header("References")]
     public RhythmGameController gameController;
 
+    private MultiplayerManager mpManager;
+    private MultiplayerInputHandler mpInputHandler;
     private List<FallingNote>[] activeNotesInLanes; // Active notes in each lane that can be hit
 
     void Awake()
@@ -42,6 +44,9 @@ public class InputHandler : MonoBehaviour
 
     void Update()
     {
+        // Lazy load references
+        if (mpManager == null) mpManager = FindFirstObjectByType<MultiplayerManager>();
+
         // Check for key presses
         for (int i = 0; i < laneKeys.Length && i < activeNotesInLanes.Length; i++)
         {
@@ -50,11 +55,12 @@ public class InputHandler : MonoBehaviour
                 NoteLane lane = (NoteLane)i;
 
                 // Check if we're in multiplayer mode
-                MultiplayerManager mpManager = FindFirstObjectByType<MultiplayerManager>();
                 if (mpManager != null && mpManager.gameStarted)
                 {
+                    // Lazy load input handler
+                    if (mpInputHandler == null) mpInputHandler = FindFirstObjectByType<MultiplayerInputHandler>();
+
                     // Send input to server in multiplayer mode
-                    MultiplayerInputHandler mpInputHandler = FindFirstObjectByType<MultiplayerInputHandler>();
                     if (mpInputHandler != null)
                     {
                         mpInputHandler.ProcessLocalInput(i);

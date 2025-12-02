@@ -81,12 +81,12 @@ public class FallingNote : MonoBehaviour
             transform.position = spawnPosition.position;
         }
 
-        // Register this note with the input handler
-        InputHandler inputHandler = FindFirstObjectByType<InputHandler>();
-        if (inputHandler != null)
-        {
-            inputHandler.AddNoteToLane(this, lane);
-        }
+        // Registration is now handled by NoteSpawner to prevent double registration
+        // InputHandler inputHandler = FindFirstObjectByType<InputHandler>();
+        // if (inputHandler != null)
+        // {
+        //     inputHandler.AddNoteToLane(this, lane);
+        // }
     }
 
     void Update()
@@ -108,14 +108,14 @@ public class FallingNote : MonoBehaviour
                 // Calculate the time duration for the note to travel from spawn to target
                 float travelDuration = RhythmGameManager.Instance.spawnOffset; // Time from spawn to target
 
-                // Calculate progress from 0 to 1 over the travel duration
+                // Calculate progress from 0 to 1 (and beyond) over the travel duration
                 float timeSinceAppear = currentTime - actualNoteAppearTime;
                 float progress = timeSinceAppear / travelDuration;
 
-                // Clamp progress between 0 and 1 to prevent going past target
-                progress = Mathf.Clamp01(progress);
+                // Allow progress to go beyond 1 so note falls past target
+                // progress = Mathf.Clamp01(progress); 
 
-                transform.position = Vector3.Lerp(spawnPosition.position, targetPosition.position, progress);
+                transform.position = Vector3.LerpUnclamped(spawnPosition.position, targetPosition.position, progress);
 
                 // Check if note is missed based on target time
                 if (currentTime > actualNoteTargetTime + RhythmGameManager.Instance.okayWindow && !isMissed)

@@ -73,13 +73,14 @@ public class MultiplayerSetup : MonoBehaviour
     public void SetAsHost()
     {
         isHost = true;
-        if (udpManager != null)
-        {
-            udpManager.isServer = true;
-        }
         if (mpManager != null)
         {
             mpManager.isHost = true;
+        }
+        
+        if (udpManager != null)
+        {
+            udpManager.InitializeServer();
         }
     }
 
@@ -88,14 +89,14 @@ public class MultiplayerSetup : MonoBehaviour
     {
         isHost = false;
         serverIP = ip;
-        if (udpManager != null)
-        {
-            udpManager.isServer = false;
-            udpManager.serverIP = ip;
-        }
         if (mpManager != null)
         {
             mpManager.isHost = false;
+        }
+        
+        if (udpManager != null)
+        {
+            udpManager.InitializeClient(ip);
         }
     }
 

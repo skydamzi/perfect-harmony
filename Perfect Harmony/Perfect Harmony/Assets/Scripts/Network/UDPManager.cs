@@ -2,6 +2,7 @@ using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using System.Collections.Generic;
 using UnityEngine;
 
 public class UDPManager : MonoBehaviour
@@ -12,12 +13,23 @@ public class UDPManager : MonoBehaviour
     private Thread receiveThread;
     private bool isRunning = false;
 
+    // Struct to hold packet and sender info
+    private struct PacketInfo
+    {
+        public MessagePacket packet;
+        public IPEndPoint sender;
+    }
+
+    // Queue to store packets received from the background thread
+    private Queue<PacketInfo> packetQueue = new Queue<PacketInfo>();
+    private object queueLock = new object();
+
     [Header("Network Settings")]
     public string serverIP = "127.0.0.1"; // Default to localhost
     public int port = 8080;
     public bool isServer = false;
 
-    public Action<MessagePacket> OnPacketReceived;
+    public Action<MessagePacket, IPEndPoint> OnPacketReceived;
 
     private void Awake()
     {
@@ -44,6 +56,39 @@ public class UDPManager : MonoBehaviour
         }
     }
 
+    private void Update()
+    {
+        // Process packets on the main thread
+        lock (queueLock)
+        {
+            while (packetQueue.Count > 0)
+            {
+                PacketInfo info = packetQueue.Dequeue();
+                if (OnPacketReceived != null)
+                {
+                    OnPacketReceived(info.packet, info.sender);
+                }
+            }
+        }
+    }
+
+    // Initialize and start server
+    public void InitializeServer()
+    {
+        StopConnection();
+        isServer = true;
+        StartServer();
+    }
+
+    // Initialize and start client with specific IP
+    public void InitializeClient(string ip)
+    {
+        StopConnection();
+        serverIP = ip;
+        isServer = false;
+        StartClient();
+    }
+
     // Start the UDP server
     private void StartServer()
     {
@@ -68,6 +113,10 @@ public class UDPManager : MonoBehaviour
         try
         {
             udpClient = new UdpClient();
+            // Bind to any available port, not just an ephemeral one, to ensure we can receive replies
+            // But for clients, typically we don't bind to a specific port unless necessary.
+            // However, udpClient.Connect() implicitly binds.
+            
             udpClient.Connect(serverIP, port);
             isRunning = true;
             receiveThread = new Thread(new ThreadStart(ReceiveLoop));
@@ -93,12 +142,17 @@ public class UDPManager : MonoBehaviour
             {
                 IPEndPoint remoteEP = new IPEndPoint(IPAddress.Any, 0);
                 byte[] data = udpClient.Receive(ref remoteEP);
-                MessagePacket packet = JsonUtility.FromJson<MessagePacket>(System.Text.Encoding.UTF8.GetString(data));
                 
-                // Invoke the callback on the main thread
-                if (OnPacketReceived != null)
+                if (data.Length > 0)
                 {
-                    OnPacketReceived(packet);
+                    string json = System.Text.Encoding.UTF8.GetString(data);
+                    MessagePacket packet = JsonUtility.FromJson<MessagePacket>(json);
+                    
+                    // Enqueue the packet safely to be processed on the main thread
+                    lock (queueLock)
+                    {
+                        packetQueue.Enqueue(new PacketInfo { packet = packet, sender = remoteEP });
+                    }
                 }
             }
             catch (Exception e)
@@ -111,7 +165,7 @@ public class UDPManager : MonoBehaviour
         }
     }
 
-    // Send a packet
+    // Send a packet (Client -> Server, or Server -> Connected Client if connected)
     public void SendPacket(MessagePacket packet)
     {
         if (udpClient != null)
@@ -128,7 +182,7 @@ public class UDPManager : MonoBehaviour
         }
     }
 
-    // Send a packet to a specific endpoint (for server use)
+    // Send a packet to a specific endpoint (Server -> Specific Client)
     public void SendPacketTo(MessagePacket packet, IPEndPoint endpoint)
     {
         if (udpClient != null)
@@ -148,7 +202,12 @@ public class UDPManager : MonoBehaviour
     // Get a unique player ID
     private string GetPlayerId()
     {
-        return SystemInfo.deviceUniqueIdentifier; // Use device ID as player ID
+        if (MultiplayerManager.Instance != null && !string.IsNullOrEmpty(MultiplayerManager.Instance.localPlayerId))
+        {
+            return MultiplayerManager.Instance.localPlayerId;
+        }
+        // Fallback with random for local testing
+        return SystemInfo.deviceUniqueIdentifier + "_" + UnityEngine.Random.Range(0, 10000);
     }
 
     // Stop the UDP connection
@@ -158,7 +217,7 @@ public class UDPManager : MonoBehaviour
         
         if (receiveThread != null && receiveThread.IsAlive)
         {
-            receiveThread.Abort(); // Note: Abort is not recommended in production, but acceptable for prototype
+            receiveThread.Abort(); 
             receiveThread = null;
         }
         

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public class MultiplayerManager : MonoBehaviour
 {
@@ -66,15 +67,18 @@ public class MultiplayerManager : MonoBehaviour
             udpManager.OnPacketReceived += HandlePacketReceived;
         }
 
-        // Generate local player ID
-        localPlayerId = SystemInfo.deviceUniqueIdentifier;
+        // Generate local player ID (Append random number for local testing support)
+        localPlayerId = SystemInfo.deviceUniqueIdentifier + "_" + Random.Range(0, 10000);
 
         // Add local player to the dictionary
-        connectedPlayers[localPlayerId] = new PlayerData(localPlayerId, "Player_Local");
+        if (!connectedPlayers.ContainsKey(localPlayerId))
+        {
+            connectedPlayers.Add(localPlayerId, new PlayerData(localPlayerId, "Player_Local"));
+        }
     }
 
     // Handle incoming packets
-    private void HandlePacketReceived(MessagePacket packet)
+    private void HandlePacketReceived(MessagePacket packet, System.Net.IPEndPoint sender)
     {
         switch (packet.type)
         {
@@ -117,11 +121,9 @@ public class MultiplayerManager : MonoBehaviour
             connectedPlayers[packet.playerId] = new PlayerData(packet.playerId, $"Player_{connectedPlayers.Count}");
             Debug.Log($"Player connected: {packet.playerId}");
             
-            // If we're the host and game has started, send current game state
             if (isHost && gameStarted)
             {
-                // Send current game state to new player
-                // TODO: Implement state sync logic
+                // TODO: Implement state sync logic for late joiners
             }
         }
     }
@@ -139,13 +141,8 @@ public class MultiplayerManager : MonoBehaviour
     // Handle player input
     private void HandlePlayerInput(MessagePacket packet)
     {
-        // Forward to game logic
         if (packet.data is PlayerInputData inputData)
         {
-            // Process the input from remote player
-            ProcessRemoteInput(inputData);
-
-            // Also send to the multiplayer input handler if available
             MultiplayerInputHandler mpInputHandler = FindFirstObjectByType<MultiplayerInputHandler>();
             if (mpInputHandler != null)
             {
@@ -162,9 +159,6 @@ public class MultiplayerManager : MonoBehaviour
             connectedPlayers[packet.playerId].score = scoreData.score;
             connectedPlayers[packet.playerId].combo = scoreData.combo;
 
-            Debug.Log($"Player {packet.playerId} score updated: {scoreData.score}, combo: {scoreData.combo}");
-
-            // Send score to the multiplayer input handler if it exists
             MultiplayerInputHandler mpInputHandler = FindFirstObjectByType<MultiplayerInputHandler>();
             if (mpInputHandler != null)
             {
@@ -173,16 +167,16 @@ public class MultiplayerManager : MonoBehaviour
         }
     }
 
-    // Handle game start command
+    // Handle game start command from the server
     private void HandleGameStart(MessagePacket packet)
     {
-        if (isHost) return; // Only clients should handle this
-        
-        Debug.Log("Game started from server");
+        if (isHost) return; // Only clients should handle this packet
+
+        Debug.Log("Received GameStart command from server. Loading 'Playing' scene.");
         gameStarted = true;
         
-        // Start the game logic
-        StartGameOnClient();
+        // Load the game scene
+        SceneManager.LoadScene("Playing");
     }
 
     // Handle game stop command
@@ -190,44 +184,25 @@ public class MultiplayerManager : MonoBehaviour
     {
         Debug.Log("Game stopped");
         gameStarted = false;
+        // Optional: Load lobby scene here
+        // SceneManager.LoadScene("Lobby");
     }
 
-    // Handle note result (hit/miss)
     private void HandleNoteResult(MessagePacket packet)
     {
-        // Handle remote player's note hit/miss event
         Debug.Log($"Remote player {packet.playerId} {(packet.type == PacketType.NoteHit ? "hit" : "missed")} a note");
     }
 
-    // Handle time synchronization
     private void HandleSyncTime(MessagePacket packet)
     {
-        // Handle time synchronization
         // TODO: Implement time sync logic
     }
 
-    // Handle game state synchronization
     private void HandleSyncGameState(MessagePacket packet)
     {
-        // Handle game state sync
         // TODO: Implement game state sync logic
     }
 
-    // Process input from a remote player
-    private void ProcessRemoteInput(PlayerInputData inputData)
-    {
-        // Handle the input but don't process it locally for local player
-        Debug.Log($"Remote input received: Lane {inputData.lane} at time {inputData.inputTime}");
-    }
-
-    // Start the game on client (called when server sends game start)
-    private void StartGameOnClient()
-    {
-        // Notify the game logic to start
-        RhythmGameManager.Instance?.StartCountdown();
-    }
-
-    // Send player input to server
     public void SendPlayerInput(int lane, float inputTime)
     {
         if (udpManager != null)
@@ -238,7 +213,6 @@ public class MultiplayerManager : MonoBehaviour
         }
     }
 
-    // Send player score to server
     public void SendPlayerScore(int score, int combo, TimingResult timingResult)
     {
         if (udpManager != null)
@@ -249,41 +223,28 @@ public class MultiplayerManager : MonoBehaviour
         }
     }
 
-    // Send game start command (host only)
     public void SendGameStart()
     {
         if (isHost && udpManager != null)
         {
             MessagePacket packet = new MessagePacket(PacketType.GameStart, localPlayerId, null);
-            udpManager.SendPacket(packet);
+            
+            MultiplayerHost host = FindFirstObjectByType<MultiplayerHost>();
+            if (host != null)
+            {
+                host.BroadcastToAll(packet);
+            }
+            else
+            {
+                // Fallback if host component not found
+                udpManager.SendPacket(packet);
+            }
         }
     }
 
-    // Send game stop command
-    public void SendGameStop()
-    {
-        if (udpManager != null)
-        {
-            MessagePacket packet = new MessagePacket(PacketType.GameStop, localPlayerId, null);
-            udpManager.SendPacket(packet);
-        }
-    }
-
-    // Send note hit result
-    public void SendNoteResult(bool isHit)
-    {
-        if (udpManager != null)
-        {
-            PacketType type = isHit ? PacketType.NoteHit : PacketType.NoteMiss;
-            MessagePacket packet = new MessagePacket(type, localPlayerId, null);
-            udpManager.SendPacket(packet);
-        }
-    }
-
-    // Check if we have enough players to start the game
     public bool HasRequiredPlayers()
     {
-        return connectedPlayers.Count >= 2; // For 2-player game
+        return connectedPlayers.Count >= 2;
     }
 
     private void OnDestroy()

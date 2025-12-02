@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.SceneManagement;
 
 public class LobbyUI : MonoBehaviour
 {
@@ -8,28 +9,56 @@ public class LobbyUI : MonoBehaviour
     public Text inviteCodeDisplay;
     public Button createGameButton;
     public Button joinGameButton;
+    public Button startGameButton; // Added for starting the game
     public Text statusText;
     public GameObject lobbyPanel;
     public GameObject gamePanel;
     
     private LobbyManager lobbyManager;
+    private MultiplayerManager mpManager;
     
     private void Start()
     {
+        // Managers are created by other scripts (LobbySceneController, MultiplayerManager)
+        // We just need to find them.
         lobbyManager = FindFirstObjectByType<LobbyManager>();
         if (lobbyManager == null)
         {
+            // LobbyManager is essential, let's add it if missing.
             GameObject lobbyObj = new GameObject("LobbyManager");
             lobbyManager = lobbyObj.AddComponent<LobbyManager>();
         }
-        
+
+        mpManager = FindFirstObjectByType<MultiplayerManager>();
+
         SetupUI();
     }
     
+    private void Update()
+    {
+        // This method controls the visibility of the "Start Game" button.
+        if (mpManager != null && startGameButton != null)
+        {
+            // Show and enable the start button only for the host when 2 players are connected.
+            bool shouldBeActive = mpManager.isHost && mpManager.connectedPlayers.Count >= 2;
+            if (startGameButton.gameObject.activeSelf != shouldBeActive)
+            {
+                startGameButton.gameObject.SetActive(shouldBeActive);
+            }
+        }
+
+        // Update status text with player count
+        if (statusText != null && mpManager != null)
+        {
+            statusText.text = $"Players Connected: {mpManager.connectedPlayers.Count} / 2";
+        }
+    }
+
     private void SetupUI()
     {
         if (createGameButton) createGameButton.onClick.AddListener(CreateGame);
         if (joinGameButton) joinGameButton.onClick.AddListener(JoinGame);
+        if (startGameButton) startGameButton.onClick.AddListener(OnStartGameClicked);
         
         UpdateInviteCodeDisplay();
     }
@@ -41,10 +70,12 @@ public class LobbyUI : MonoBehaviour
             lobbyManager.CreateGame();
             UpdateInviteCodeDisplay();
             
-            if (statusText) statusText.text = "게임 방이 생성되었습니다!";
+            if (statusText) statusText.text = "Room created. Waiting for player...";
             if (inviteCodeDisplay) inviteCodeDisplay.gameObject.SetActive(true);
             
-            Debug.Log("게임 방 생성됨. 초대 코드: " + lobbyManager.GetInviteCode());
+            // Host has created a game, disable join/create buttons
+            createGameButton.interactable = false;
+            joinGameButton.interactable = false;
         }
     }
     
@@ -55,13 +86,26 @@ public class LobbyUI : MonoBehaviour
             if (inviteCodeInput != null && !string.IsNullOrEmpty(inviteCodeInput.text))
             {
                 lobbyManager.JoinGame(inviteCodeInput.text.Trim());
-                
-                if (statusText) statusText.text = inviteCodeInput.text + " 코드로 참가 시도 중...";
+                if (statusText) statusText.text = "Joining game with code: " + inviteCodeInput.text;
+
+                // Client has attempted to join, disable join/create buttons
+                createGameButton.interactable = false;
+                joinGameButton.interactable = false;
             }
             else
             {
-                if (statusText) statusText.text = "초대 코드를 입력해주세요!";
+                if (statusText) statusText.text = "Please enter Host IP!";
             }
+        }
+    }
+
+    private void OnStartGameClicked()
+    {
+        if (mpManager != null && mpManager.isHost)
+        {
+            Debug.Log("Start Game button clicked by host. Sending start command and loading 'Playing' scene.");
+            mpManager.SendGameStart();
+            SceneManager.LoadScene("Playing");
         }
     }
     
@@ -72,7 +116,7 @@ public class LobbyUI : MonoBehaviour
             string code = lobbyManager.GetInviteCode();
             if (!string.IsNullOrEmpty(code))
             {
-                inviteCodeDisplay.text = "초대 코드: " + code;
+                inviteCodeDisplay.text = "Host IP: " + code;
                 inviteCodeDisplay.gameObject.SetActive(true);
             }
             else
@@ -80,19 +124,5 @@ public class LobbyUI : MonoBehaviour
                 inviteCodeDisplay.gameObject.SetActive(false);
             }
         }
-    }
-    
-    // 게임 시작 시 UI 전환
-    public void ShowGameUI()
-    {
-        if (lobbyPanel) lobbyPanel.SetActive(false);
-        if (gamePanel) gamePanel.SetActive(true);
-    }
-    
-    // 로비로 돌아갈 때
-    public void ShowLobbyUI()
-    {
-        if (lobbyPanel) lobbyPanel.SetActive(true);
-        if (gamePanel) gamePanel.SetActive(false);
     }
 }

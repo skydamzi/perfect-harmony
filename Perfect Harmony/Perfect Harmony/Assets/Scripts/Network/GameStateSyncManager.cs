@@ -78,7 +78,7 @@ public class GameStateSyncManager : MonoBehaviour
     }
 
     // Handle received packets
-    private void HandlePacketReceived(MessagePacket packet)
+    private void HandlePacketReceived(MessagePacket packet, System.Net.IPEndPoint sender)
     {
         switch (packet.type)
         {

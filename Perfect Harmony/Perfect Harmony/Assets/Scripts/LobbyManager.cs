@@ -26,8 +26,8 @@ public class LobbyManager : MonoBehaviour
     // 호스트(방 생성자)로 시작
     public void CreateGame()
     {
-        currentInviteCode = GenerateInviteCode();
-        Debug.Log("게임 방 생성됨. 초대 코드: " + currentInviteCode);
+        currentInviteCode = GetLocalIPAddress();
+        Debug.Log("게임 방 생성됨. 호스트 IP: " + currentInviteCode);
         
         // 멀티플레이어 설정
         MultiplayerSetup setup = GetComponent<MultiplayerSetup>();
@@ -54,40 +54,60 @@ public class LobbyManager : MonoBehaviour
     {
         if (string.IsNullOrEmpty(inviteCode))
         {
-            Debug.LogError("초대 코드가 없습니다!");
+            Debug.LogError("IP 주소가 없습니다!");
             return;
         }
         
-        Debug.Log(inviteCode + " 코드로 게임에 참가 시도 중...");
+        Debug.Log(inviteCode + " 주소로 게임에 참가 시도 중...");
         
         // 멀티플레이어 설정
         MultiplayerSetup setup = GetComponent<MultiplayerSetup>();
         if (setup != null)
         {
-            setup.SetAsClient("127.0.0.1"); // 간단한 테스트를 위해 localhost 사용
+            setup.SetAsClient(inviteCode); // 입력된 IP 주소 사용
         }
         else
         {
             GameObject setupObj = new GameObject("MultiplayerSetup");
             setup = setupObj.AddComponent<MultiplayerSetup>();
-            setup.SetAsClient("127.0.0.1");
+            setup.SetAsClient(inviteCode);
         }
     }
     
-    // 초대 코드 생성
-    private string GenerateInviteCode()
+    // 로컬 IP 주소 가져오기 (소켓 방식 - 더 빠르고 정확함)
+    private string GetLocalIPAddress()
     {
-        string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        System.Text.StringBuilder code = new System.Text.StringBuilder();
-        
-        System.Random random = new System.Random();
-        for (int i = 0; i < 8; i++)
+        string localIP = "127.0.0.1";
+        try
         {
-            if (i == 4) code.Append('-'); // 4자리 뒤에 하이픈
-            code.Append(chars[random.Next(chars.Length)]);
+            using (System.Net.Sockets.Socket socket = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Dgram, System.Net.Sockets.ProtocolType.Udp))
+            {
+                socket.Connect("8.8.8.8", 65530);
+                System.Net.IPEndPoint endPoint = socket.LocalEndPoint as System.Net.IPEndPoint;
+                localIP = endPoint.Address.ToString();
+            }
         }
-        
-        return code.ToString();
+        catch (System.Exception e)
+        {
+            Debug.LogWarning("IP 주소 가져오기 실패 (소켓 방식), DNS 방식 시도: " + e.Message);
+            // Fallback to DNS method if socket fails
+            try
+            {
+                var host = System.Net.Dns.GetHostEntry(System.Net.Dns.GetHostName());
+                foreach (var ip in host.AddressList)
+                {
+                    if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    {
+                        return ip.ToString();
+                    }
+                }
+            }
+            catch
+            {
+                // Both failed
+            }
+        }
+        return localIP;
     }
     
     // 초대 코드 가져오기
