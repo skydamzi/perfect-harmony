@@ -66,16 +66,13 @@ public class UDPManager : MonoBehaviour
                 PacketInfo info = packetQueue.Dequeue();
                 if (OnPacketReceived != null)
                 {
-                    foreach (Action<MessagePacket, IPEndPoint> handler in OnPacketReceived.GetInvocationList())
+                    try
                     {
-                        try
-                        {
-                            handler(info.packet, info.sender);
-                        }
-                        catch (Exception e)
-                        {
-                            Debug.LogError($"Error in packet handler ({handler.Method.Name}): {e}");
-                        }
+                        OnPacketReceived(info.packet, info.sender);
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogError($"Error processing packet: {e}");
                     }
                 }
             }
@@ -139,10 +136,11 @@ public class UDPManager : MonoBehaviour
                 try { udpClient.Client.IOControl(SIO_UDP_CONNRESET, new byte[] { 0 }, null); } catch {}
             }
 
-            // Connect to the server to establish a default remote endpoint.
-            // This is crucial for receiving packets in some network configurations.
-            udpClient.Connect(serverIP, port);
+            // Bind to any available port, not just an ephemeral one, to ensure we can receive replies
+            // But for clients, typically we don't bind to a specific port unless necessary.
+            // However, udpClient.Connect() implicitly binds.
             
+            udpClient.Connect(serverIP, port);
             isRunning = true;
             receiveThread = new Thread(new ThreadStart(ReceiveLoop));
             receiveThread.IsBackground = true;
@@ -216,17 +214,7 @@ public class UDPManager : MonoBehaviour
             try
             {
                 byte[] bytes = System.Text.Encoding.UTF8.GetBytes(JsonUtility.ToJson(packet));
-                
-                if (udpClient.Client.Connected)
-                {
-                    udpClient.Send(bytes, bytes.Length);
-                }
-                else
-                {
-                    // If not connected (e.g. Server trying to use this method), we need an endpoint.
-                    // But this method signature doesn't provide one.
-                    Debug.LogError("Cannot use SendPacket() on an unconnected socket (Server). Use SendPacketTo() instead.");
-                }
+                udpClient.Send(bytes, bytes.Length);
             }
             catch (Exception e)
             {
@@ -247,17 +235,15 @@ public class UDPManager : MonoBehaviour
                 
                 byte[] bytes = System.Text.Encoding.UTF8.GetBytes(JsonUtility.ToJson(packet));
                 
-                // Check if the socket is connected (Client mode) or not (Server mode)
-                if (udpClient.Client.Connected)
+                if (isServer)
                 {
-                    // Client is connected to a specific host, so we cannot specify a destination endpoint here.
-                    // It will automatically go to the connected server.
-                    udpClient.Send(bytes, bytes.Length);
+                    // Server must specify endpoint
+                    udpClient.Send(bytes, bytes.Length, endpoint);
                 }
                 else
                 {
-                    // Server is not connected, so we MUST specify the destination endpoint.
-                    udpClient.Send(bytes, bytes.Length, endpoint);
+                    // Client is connected, cannot specify endpoint (it goes to the connected server)
+                    udpClient.Send(bytes, bytes.Length);
                 }
             }
             catch (Exception e)
