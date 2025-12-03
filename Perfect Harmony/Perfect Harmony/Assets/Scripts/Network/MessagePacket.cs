@@ -1,4 +1,5 @@
 using System;
+using UnityEngine;
 
 [Serializable]
 public class MessagePacket
@@ -6,13 +7,27 @@ public class MessagePacket
     public PacketType type;
     public string playerId;
     public float timestamp;
-    public object data;
+    public string payload; // Serialized JSON string of the data object
     
     public MessagePacket(PacketType type, string playerId, object data)
     {
         this.type = type;
         this.playerId = playerId;
-        this.timestamp = UnityEngine.Time.time; // Use Unity's time for consistency
-        this.data = data;
+        this.timestamp = Time.time;
+        
+        if (data != null)
+        {
+            this.payload = JsonUtility.ToJson(data);
+        }
+        else
+        {
+            this.payload = "";
+        }
+    }
+    
+    public T GetData<T>()
+    {
+        if (string.IsNullOrEmpty(payload)) return default(T);
+        return JsonUtility.FromJson<T>(payload);
     }
 }

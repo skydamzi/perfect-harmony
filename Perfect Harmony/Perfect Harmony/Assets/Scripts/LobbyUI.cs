@@ -39,18 +39,32 @@ public class LobbyUI : MonoBehaviour
         // This method controls the visibility of the "Start Game" button.
         if (mpManager != null && startGameButton != null)
         {
-            // Show and enable the start button only for the host when 2 players are connected.
-            bool shouldBeActive = mpManager.isHost && mpManager.connectedPlayers.Count >= 2;
+            // Show and enable the start button when 2 players are connected (Host or Guest).
+            bool shouldBeActive = mpManager.connectedPlayers.Count >= 2;
             if (startGameButton.gameObject.activeSelf != shouldBeActive)
             {
                 startGameButton.gameObject.SetActive(shouldBeActive);
+                if (shouldBeActive)
+                {
+                     // Change button text to "Ready" if it hasn't been clicked yet
+                     Text btnText = startGameButton.GetComponentInChildren<Text>();
+                     if (btnText != null && startGameButton.interactable)
+                     {
+                         btnText.text = "Ready";
+                     }
+                }
             }
         }
 
         // Update status text with player count
         if (statusText != null && mpManager != null)
         {
-            statusText.text = $"Players Connected: {mpManager.connectedPlayers.Count} / 2";
+            int readyCount = 0;
+            foreach(var p in mpManager.connectedPlayers.Values)
+            {
+                if(p.isReady) readyCount++;
+            }
+            statusText.text = $"Players: {mpManager.connectedPlayers.Count}/2 | Ready: {readyCount}/2";
         }
     }
 
@@ -101,11 +115,15 @@ public class LobbyUI : MonoBehaviour
 
     private void OnStartGameClicked()
     {
-        if (mpManager != null && mpManager.isHost)
+        if (mpManager != null)
         {
-            Debug.Log("Start Game button clicked by host. Sending start command and loading 'Playing' scene.");
-            mpManager.SendGameStart();
-            SceneManager.LoadScene("Playing");
+            Debug.Log("Ready button clicked. Sending Ready command.");
+            mpManager.SendPlayerReady();
+            
+            // Disable button after clicking
+            startGameButton.interactable = false;
+            Text btnText = startGameButton.GetComponentInChildren<Text>();
+            if (btnText != null) btnText.text = "Waiting...";
         }
     }
     

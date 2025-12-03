@@ -97,7 +97,8 @@ public class GameStateSyncManager : MonoBehaviour
     // Process game state packet from server
     private void ProcessGameStatePacket(MessagePacket packet)
     {
-        if (packet.data is GameStateData gameStateData && mpManager != null && !mpManager.isHost)
+        GameStateData gameStateData = packet.GetData<GameStateData>();
+        if (gameStateData != null && mpManager != null && !mpManager.isHost)
         {
             // Add to the state queue for interpolation
             stateQueue.Enqueue(gameStateData);
@@ -121,7 +122,8 @@ public class GameStateSyncManager : MonoBehaviour
     // Process note spawn packet
     private void ProcessNoteSpawnPacket(MessagePacket packet)
     {
-        if (packet.data is NoteData noteData)
+        NoteData noteData = packet.GetData<NoteData>();
+        if (noteData != null)
         {
             serverNoteQueue.Add(noteData);
             

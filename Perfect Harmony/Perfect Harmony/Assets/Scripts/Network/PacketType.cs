@@ -3,6 +3,7 @@ public enum PacketType
     // Connection related
     Connect,
     Disconnect,
+    Ping,
     
     // Game state related
     GameStart,
@@ -16,6 +17,7 @@ public enum PacketType
     // Player related
     PlayerInput,
     PlayerScore,
+    PlayerReady,
     
     // Sync related
     SyncTime,

@@ -77,13 +77,49 @@ public class MultiplayerManager : MonoBehaviour
         }
     }
 
+    [Header("Debug Info")]
+    public string lastPacketTypeReceived;
+    public float lastPacketTime;
+
+    private void OnGUI()
+    {
+        GUILayout.BeginArea(new Rect(10, 10, 300, 500));
+        GUILayout.Box("Network Debugger");
+        GUILayout.Label($"Local ID: {localPlayerId}");
+        GUILayout.Label($"Role: {(isHost ? "HOST" : "CLIENT")}");
+        GUILayout.Label($"Game Started: {gameStarted}");
+        
+        GUILayout.Space(10);
+        GUILayout.Label("Connected Players:");
+        foreach(var p in connectedPlayers.Values)
+        {
+            GUILayout.Label($"- {p.playerId.Substring(0, 8)}... : Ready={p.isReady}, Score={p.score}");
+        }
+
+        GUILayout.Space(10);
+        GUILayout.Label($"Last Packet: {lastPacketTypeReceived} @ {lastPacketTime:F2}");
+
+        if (GUILayout.Button("Force Load 'Playing' Scene"))
+        {
+            SceneManager.LoadSceneAsync("Playing");
+        }
+        
+        GUILayout.EndArea();
+    }
+
     // Handle incoming packets
     private void HandlePacketReceived(MessagePacket packet, System.Net.IPEndPoint sender)
     {
+        lastPacketTypeReceived = packet.type.ToString();
+        lastPacketTime = Time.time;
+
+        // Debug.Log($"Packet received: {packet.type} from {packet.playerId}"); // Too noisy for input
+        if (packet.type == PacketType.GameStart) Debug.Log($"Packet received: {packet.type} from {packet.playerId}");
+
         switch (packet.type)
         {
             case PacketType.Connect:
-                HandlePlayerConnect(packet);
+                HandlePlayerConnect(packet, sender);
                 break;
             case PacketType.Disconnect:
                 HandlePlayerDisconnect(packet);
@@ -93,6 +129,9 @@ public class MultiplayerManager : MonoBehaviour
                 break;
             case PacketType.PlayerScore:
                 HandlePlayerScore(packet);
+                break;
+            case PacketType.PlayerReady:
+                HandlePlayerReady(packet);
                 break;
             case PacketType.GameStart:
                 HandleGameStart(packet);
@@ -114,16 +153,26 @@ public class MultiplayerManager : MonoBehaviour
     }
 
     // Handle player connection
-    private void HandlePlayerConnect(MessagePacket packet)
+    private void HandlePlayerConnect(MessagePacket packet, System.Net.IPEndPoint sender)
     {
         if (!connectedPlayers.ContainsKey(packet.playerId))
         {
             connectedPlayers[packet.playerId] = new PlayerData(packet.playerId, $"Player_{connectedPlayers.Count}");
             Debug.Log($"Player connected: {packet.playerId}");
             
-            if (isHost && gameStarted)
+            // If we are the host, we need to:
+            // 1. Send our own info back to the new client so they know who we are.
+            // 2. (Optional) Send info about OTHER existing clients to the new client (for >2 players).
+            if (isHost)
             {
-                // TODO: Implement state sync logic for late joiners
+                // Reply to the new client
+                MessagePacket replyPacket = new MessagePacket(PacketType.Connect, localPlayerId, null);
+                udpManager.SendPacketTo(replyPacket, sender);
+
+                if (gameStarted)
+                {
+                    // TODO: Implement state sync logic for late joiners
+                }
             }
         }
     }
@@ -141,7 +190,8 @@ public class MultiplayerManager : MonoBehaviour
     // Handle player input
     private void HandlePlayerInput(MessagePacket packet)
     {
-        if (packet.data is PlayerInputData inputData)
+        PlayerInputData inputData = packet.GetData<PlayerInputData>();
+        if (inputData != null)
         {
             MultiplayerInputHandler mpInputHandler = FindFirstObjectByType<MultiplayerInputHandler>();
             if (mpInputHandler != null)
@@ -154,7 +204,8 @@ public class MultiplayerManager : MonoBehaviour
     // Handle player score update
     private void HandlePlayerScore(MessagePacket packet)
     {
-        if (packet.data is PlayerScoreData scoreData && connectedPlayers.ContainsKey(packet.playerId))
+        PlayerScoreData scoreData = packet.GetData<PlayerScoreData>();
+        if (scoreData != null && connectedPlayers.ContainsKey(packet.playerId))
         {
             connectedPlayers[packet.playerId].score = scoreData.score;
             connectedPlayers[packet.playerId].combo = scoreData.combo;
@@ -167,16 +218,51 @@ public class MultiplayerManager : MonoBehaviour
         }
     }
 
+    // Handle player ready state
+    private void HandlePlayerReady(MessagePacket packet)
+    {
+        if (connectedPlayers.ContainsKey(packet.playerId))
+        {
+            connectedPlayers[packet.playerId].isReady = true;
+            Debug.Log($"Player {packet.playerId} is ready!");
+
+            if (isHost)
+            {
+                CheckAllPlayersReady();
+            }
+        }
+    }
+
+    private void CheckAllPlayersReady()
+    {
+        // Host checks if everyone is ready
+        bool allReady = true;
+        foreach (var player in connectedPlayers.Values)
+        {
+            if (!player.isReady)
+            {
+                allReady = false;
+                break;
+            }
+        }
+
+        if (allReady && connectedPlayers.Count >= 2)
+        {
+            Debug.Log("All players ready. Starting game!");
+            SendGameStart();
+        }
+    }
+
     // Handle game start command from the server
     private void HandleGameStart(MessagePacket packet)
     {
-        if (isHost) return; // Only clients should handle this packet
+        // if (isHost) return; // Allow both Host and Client to handle GameStart logic (e.g. if Client starts it)
 
-        Debug.Log("Received GameStart command from server. Loading 'Playing' scene.");
+        Debug.Log($"Received GameStart command from {packet.playerId}. Loading 'Playing' scene async.");
         gameStarted = true;
         
-        // Load the game scene
-        SceneManager.LoadScene("Playing");
+        // Load the game scene asynchronously to avoid freezing the network stack
+        SceneManager.LoadSceneAsync("Playing");
     }
 
     // Handle game stop command
@@ -205,27 +291,78 @@ public class MultiplayerManager : MonoBehaviour
 
     public void SendPlayerInput(int lane, float inputTime)
     {
-        if (udpManager != null)
+        PlayerInputData inputData = new PlayerInputData(lane, inputTime);
+        MessagePacket packet = new MessagePacket(PacketType.PlayerInput, localPlayerId, inputData);
+
+        if (isHost)
         {
-            PlayerInputData inputData = new PlayerInputData(lane, inputTime);
-            MessagePacket packet = new MessagePacket(PacketType.PlayerInput, localPlayerId, inputData);
+            MultiplayerHost host = FindFirstObjectByType<MultiplayerHost>();
+            if (host != null)
+            {
+                host.BroadcastToAllExcept(packet, localPlayerId);
+            }
+        }
+        else if (udpManager != null)
+        {
             udpManager.SendPacket(packet);
         }
     }
 
     public void SendPlayerScore(int score, int combo, TimingResult timingResult)
     {
-        if (udpManager != null)
+        PlayerScoreData scoreData = new PlayerScoreData(score, combo, timingResult);
+        MessagePacket packet = new MessagePacket(PacketType.PlayerScore, localPlayerId, scoreData);
+
+        if (isHost)
         {
-            PlayerScoreData scoreData = new PlayerScoreData(score, combo, timingResult);
-            MessagePacket packet = new MessagePacket(PacketType.PlayerScore, localPlayerId, scoreData);
+            MultiplayerHost host = FindFirstObjectByType<MultiplayerHost>();
+            if (host != null)
+            {
+                // Host broadcasts their own score to all clients
+                host.BroadcastToAllExcept(packet, localPlayerId);
+            }
+        }
+        else if (udpManager != null)
+        {
             udpManager.SendPacket(packet);
+        }
+    }
+
+    public void SendPlayerReady()
+    {
+        // Set local player ready
+        if (connectedPlayers.ContainsKey(localPlayerId))
+        {
+            connectedPlayers[localPlayerId].isReady = true;
+        }
+
+        MessagePacket packet = new MessagePacket(PacketType.PlayerReady, localPlayerId, null);
+
+        if (isHost)
+        {
+            // Host broadcasts their ready status to all clients
+            MultiplayerHost host = FindFirstObjectByType<MultiplayerHost>();
+            if (host != null)
+            {
+                host.BroadcastToAll(packet);
+            }
+            
+            // Check immediately
+            CheckAllPlayersReady();
+        }
+        else
+        {
+            // Client sends ready status to host
+            if (udpManager != null)
+            {
+                udpManager.SendPacket(packet);
+            }
         }
     }
 
     public void SendGameStart()
     {
-        if (isHost && udpManager != null)
+        if (udpManager != null)
         {
             MessagePacket packet = new MessagePacket(PacketType.GameStart, localPlayerId, null);
             
@@ -239,7 +376,16 @@ public class MultiplayerManager : MonoBehaviour
                 // Fallback if host component not found
                 udpManager.SendPacket(packet);
             }
+
+            // Start locally for the host with a slight delay to ensure packets start sending
+            StartCoroutine(DelayedHostStart(packet));
         }
+    }
+
+    private System.Collections.IEnumerator DelayedHostStart(MessagePacket packet)
+    {
+        yield return new WaitForSeconds(0.2f);
+        HandleGameStart(packet);
     }
 
     public bool HasRequiredPlayers()
