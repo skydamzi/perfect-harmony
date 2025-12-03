@@ -10,14 +10,14 @@ public class FrameCounter : MonoBehaviour
 
     // 프레임 저장용
     private List<float> frameTimes = new List<float>();
-    private const int sampleCount = 200;   // 샘플 개수 (원하면 늘릴 수 있음)
+    private const int sampleCount = 200;   // 저장할 샘플 수
 
     void Update()
     {
-        // 현재 프레임 처리 시간 (지수평활)
+        // 부드럽게 평균낸 deltaTime
         deltaTime += (Time.unscaledDeltaTime - deltaTime) * 0.1f;
 
-        // 프레임 저장
+        // 샘플 저장
         frameTimes.Add(Time.unscaledDeltaTime);
         if (frameTimes.Count > sampleCount)
             frameTimes.RemoveAt(0);
@@ -32,31 +32,35 @@ public class FrameCounter : MonoBehaviour
         style.fontSize = size;
         style.normal.textColor = color;
 
+        // 현재 FPS
         float ms = deltaTime * 1000f;
-        float fps = 1.0f / deltaTime;
+        float fps = 1f / deltaTime;
 
-        // === 10% Low + 1% Low 계산 ===
+        // ▼ 10% / 1% Low FPS
         float low10 = CalcPercentLowFPS(10);
         float low1 = CalcPercentLowFPS(1);
+
+        // ▼ Lowest FPS 계산
+        float lowest = CalcLowestFPS();
 
         string text =
             $"{fps:0.} FPS ({ms:0.0} ms)\n" +
             $"10% Low: {low10:0.} FPS\n" +
-            $"1% Low:  {low1:0.} FPS";
+            $"1% Low:  {low1:0.} FPS\n" +
+            $"Lowest:  {lowest:0.} FPS";
 
         GUI.Label(rect, text, style);
     }
 
     /// <summary>
-    /// percent% Low FPS 계산 (예: 10 → 10% Low, 1 → 1% Low)
+    /// percent% Low FPS 계산
     /// </summary>
     private float CalcPercentLowFPS(float percent)
     {
         if (frameTimes.Count == 0) return 0f;
 
-        // 작은 순서대로 정렬 (프레임 타임이 크면 FPS 낮음)
         List<float> sorted = new List<float>(frameTimes);
-        sorted.Sort();  // 오름차순
+        sorted.Sort(); // 오름차순: 큰 값일수록 FPS 낮음
 
         int count = Mathf.FloorToInt(sorted.Count * (percent / 100f));
         count = Mathf.Clamp(count, 1, sorted.Count);
@@ -66,8 +70,23 @@ public class FrameCounter : MonoBehaviour
             sum += sorted[i];
 
         float avgFrameTime = sum / count;
-        float fps = 1.0f / avgFrameTime;
+        return 1f / avgFrameTime;
+    }
 
-        return fps;
+    /// <summary>
+    /// 최저 FPS = 가장 오래 걸린 프레임
+    /// </summary>
+    private float CalcLowestFPS()
+    {
+        if (frameTimes.Count == 0) return 0f;
+
+        float maxFrameTime = 0f;
+        for (int i = 0; i < frameTimes.Count; i++)
+        {
+            if (frameTimes[i] > maxFrameTime)
+                maxFrameTime = frameTimes[i];
+        }
+
+        return 1f / maxFrameTime;
     }
 }
