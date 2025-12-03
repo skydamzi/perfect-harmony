@@ -11,9 +11,32 @@ public class AutoSetup : MonoBehaviour
         SetupScoreManager();
         SetupInputHandler();
         SetupRhythmGameManager();
+        SetupSpriteEffectManager();
         SetupGameStarter();
 
         Debug.Log("AutoSetup completed. Game should be ready to play!");
+    }
+
+    void SetupSpriteEffectManager()
+    {
+        SpriteEffectManager effectManager = FindFirstObjectByType<SpriteEffectManager>();
+        if (effectManager == null)
+        {
+            GameObject obj = new GameObject("SpriteEffectManager");
+            effectManager = obj.AddComponent<SpriteEffectManager>();
+        }
+
+        if (effectManager.hitSpritePrefab == null)
+        {
+            // Resources 폴더에서 로드 시도 (혹시 이동시켰을 경우를 대비)
+            effectManager.hitSpritePrefab = Resources.Load<GameObject>("HitSprite2D");
+            
+            // 여전히 없다면 경고 출력
+            if (effectManager.hitSpritePrefab == null)
+            {
+                Debug.LogWarning("SpriteEffectManager: HitSpritePrefab이 할당되지 않았습니다! 인스펙터에서 HitSprite2D 프리팹을 할당해주세요.");
+            }
+        }
     }
 
     void SetupLaneSetup()
