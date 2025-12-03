@@ -66,7 +66,17 @@ public class UDPManager : MonoBehaviour
                 PacketInfo info = packetQueue.Dequeue();
                 if (OnPacketReceived != null)
                 {
-                    OnPacketReceived(info.packet, info.sender);
+                    foreach (Action<MessagePacket, IPEndPoint> handler in OnPacketReceived.GetInvocationList())
+                    {
+                        try
+                        {
+                            handler(info.packet, info.sender);
+                        }
+                        catch (Exception e)
+                        {
+                            Debug.LogError($"Error in packet handler ({handler.Method.Name}): {e}");
+                        }
+                    }
                 }
             }
         }
@@ -95,6 +105,14 @@ public class UDPManager : MonoBehaviour
         try
         {
             udpClient = new UdpClient(port);
+            
+            // Fix for Windows UDP SIO_UDP_CONNRESET (10054 error)
+            if (Application.platform == RuntimePlatform.WindowsEditor || Application.platform == RuntimePlatform.WindowsPlayer)
+            {
+                const int SIO_UDP_CONNRESET = -1744830452;
+                try { udpClient.Client.IOControl(SIO_UDP_CONNRESET, new byte[] { 0 }, null); } catch {}
+            }
+
             isRunning = true;
             receiveThread = new Thread(new ThreadStart(ReceiveLoop));
             receiveThread.IsBackground = true;
@@ -113,6 +131,14 @@ public class UDPManager : MonoBehaviour
         try
         {
             udpClient = new UdpClient();
+            
+            // Fix for Windows UDP SIO_UDP_CONNRESET (10054 error)
+            if (Application.platform == RuntimePlatform.WindowsEditor || Application.platform == RuntimePlatform.WindowsPlayer)
+            {
+                const int SIO_UDP_CONNRESET = -1744830452;
+                try { udpClient.Client.IOControl(SIO_UDP_CONNRESET, new byte[] { 0 }, null); } catch {}
+            }
+
             // Bind to any available port, not just an ephemeral one, to ensure we can receive replies
             // But for clients, typically we don't bind to a specific port unless necessary.
             // However, udpClient.Connect() implicitly binds.
@@ -146,13 +172,31 @@ public class UDPManager : MonoBehaviour
                 if (data.Length > 0)
                 {
                     string json = System.Text.Encoding.UTF8.GetString(data);
+                    // Debug.Log($"[UDP] Raw: {json}"); // Enable if needed
                     MessagePacket packet = JsonUtility.FromJson<MessagePacket>(json);
                     
+                    if (packet.type != PacketType.Ping)
+                        Debug.Log($"[UDP] Received {packet.type} from {remoteEP}");
+
                     // Enqueue the packet safely to be processed on the main thread
                     lock (queueLock)
                     {
                         packetQueue.Enqueue(new PacketInfo { packet = packet, sender = remoteEP });
                     }
+                }
+            }
+            catch (SocketException se)
+            {
+                // Ignore ConnectionReset (10054) which happens when a previous send failed to reach destination
+                if (se.SocketErrorCode == SocketError.ConnectionReset)
+                {
+                    // Debug.LogWarning("UDP Connection Reset (10054) - Remote host closed connection. Ignoring.");
+                    continue; 
+                }
+                
+                if (isRunning)
+                {
+                    Debug.LogError($"Socket Error receiving UDP packet: {se.Message} ({se.SocketErrorCode})");
                 }
             }
             catch (Exception e)
@@ -189,8 +233,21 @@ public class UDPManager : MonoBehaviour
         {
             try
             {
+                if (packet.type != PacketType.Ping)
+                    Debug.Log($"Sending {packet.type} to {endpoint.Address}:{endpoint.Port}");
+                
                 byte[] bytes = System.Text.Encoding.UTF8.GetBytes(JsonUtility.ToJson(packet));
-                udpClient.Send(bytes, bytes.Length, endpoint);
+                
+                if (isServer)
+                {
+                    // Server must specify endpoint
+                    udpClient.Send(bytes, bytes.Length, endpoint);
+                }
+                else
+                {
+                    // Client is connected, cannot specify endpoint (it goes to the connected server)
+                    udpClient.Send(bytes, bytes.Length);
+                }
             }
             catch (Exception e)
             {

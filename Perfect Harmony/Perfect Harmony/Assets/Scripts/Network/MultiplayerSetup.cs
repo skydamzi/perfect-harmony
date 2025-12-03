@@ -82,6 +82,20 @@ public class MultiplayerSetup : MonoBehaviour
         {
             udpManager.InitializeServer();
         }
+
+        // Ensure MultiplayerHost exists and is configured
+        MultiplayerHost host = FindFirstObjectByType<MultiplayerHost>();
+        if (host == null)
+        {
+            GameObject hostObj = new GameObject("MultiplayerHost");
+            host = hostObj.AddComponent<MultiplayerHost>();
+            if (mpManager != null) host.multiplayerManager = mpManager;
+            DontDestroyOnLoad(hostObj);
+        }
+        else
+        {
+            if (mpManager != null) host.multiplayerManager = mpManager;
+        }
     }
 
     // Method to switch to client mode

@@ -12,6 +12,11 @@ public class MultiplayerHost : MonoBehaviour
     // Store connected clients and their endpoints
     private Dictionary<string, IPEndPoint> clientEndpoints = new Dictionary<string, IPEndPoint>();
 
+    private void Awake()
+    {
+        DontDestroyOnLoad(gameObject);
+    }
+
     private void Start()
     {
         // Get or create multiplayer manager
@@ -31,6 +36,21 @@ public class MultiplayerHost : MonoBehaviour
         if (UDPManager.Instance != null)
         {
             UDPManager.Instance.OnPacketReceived += HandlePacketReceived;
+        }
+
+        StartCoroutine(HeartbeatRoutine());
+    }
+
+    private System.Collections.IEnumerator HeartbeatRoutine()
+    {
+        while (true)
+        {
+            yield return new WaitForSeconds(1.0f);
+            if (clientEndpoints.Count > 0)
+            {
+                MessagePacket pingPacket = new MessagePacket(PacketType.Ping, multiplayerManager.localPlayerId, null);
+                BroadcastToAll(pingPacket);
+            }
         }
     }
 
@@ -76,6 +96,15 @@ public class MultiplayerHost : MonoBehaviour
                 // Notify other players about the new connection
                 BroadcastToAllExcept(packet, packet.playerId);
                 break;
+
+            case PacketType.PlayerReady:
+                 // Relay ready status to all other players
+                 BroadcastToAllExcept(packet, packet.playerId);
+                 break;
+            
+            case PacketType.Ping:
+                // Reply with Pong (optional, or just ignore if client sends ping)
+                break;
                 
             case PacketType.PlayerInput:
                 // Relay player input to all other players
@@ -112,10 +141,43 @@ public class MultiplayerHost : MonoBehaviour
     // Broadcast message to all connected clients
     public void BroadcastToAll(MessagePacket packet)
     {
-        foreach (var kvp in clientEndpoints)
+        if (packet.type != PacketType.Ping) 
+            Debug.Log($"Broadcasting packet {packet.type} to {clientEndpoints.Count} clients.");
+        
+        // Special handling for GameStart to ensure delivery via redundancy
+        if (packet.type == PacketType.GameStart)
         {
-            UDPManager.Instance.SendPacketTo(packet, kvp.Value);
+            StartCoroutine(BroadcastGameStartRoutine(packet));
         }
+        else
+        {
+            foreach (var kvp in clientEndpoints)
+            {
+                UDPManager.Instance.SendPacketTo(packet, kvp.Value);
+            }
+        }
+    }
+
+    private System.Collections.IEnumerator BroadcastGameStartRoutine(MessagePacket packet)
+    {
+        Debug.Log($"Starting GameStart broadcast routine. Target clients: {clientEndpoints.Count}");
+        
+        // Create a safe copy of endpoints to iterate over multiple frames
+        List<IPEndPoint> targets = new List<IPEndPoint>(clientEndpoints.Values);
+
+        for (int i = 0; i < 5; i++)
+        {
+            foreach (var target in targets)
+            {
+                if (UDPManager.Instance != null)
+                {
+                    // Debug.Log($"Sending GameStart to {target} (Attempt {i+1}/5)");
+                    UDPManager.Instance.SendPacketTo(packet, target);
+                }
+            }
+            yield return new WaitForSeconds(0.1f);
+        }
+        Debug.Log("Finished GameStart broadcast routine.");
     }
 
     // Broadcast message to all except one client

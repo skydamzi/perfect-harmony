@@ -97,7 +97,8 @@ public class TimingSyncManager : MonoBehaviour
     // Process a sync packet from server
     private void ProcessSyncPacket(MessagePacket packet)
     {
-        if (packet.data is SyncData syncData)
+        SyncData syncData = packet.GetData<SyncData>();
+        if (syncData != null)
         {
             // Add to sync history
             SyncRecord record = new SyncRecord(Time.time, syncData.serverTime, syncData.serverSongPosition, syncData.serverBeat);
@@ -141,7 +142,8 @@ public class TimingSyncManager : MonoBehaviour
     // Process game state sync packet
     private void ProcessGameStatePacket(MessagePacket packet)
     {
-        if (packet.data is GameStateData gameStateData)
+        GameStateData gameStateData = packet.GetData<GameStateData>();
+        if (gameStateData != null)
         {
             // Update local game state based on server's state
             serverSongPosition = gameStateData.songPosition;
