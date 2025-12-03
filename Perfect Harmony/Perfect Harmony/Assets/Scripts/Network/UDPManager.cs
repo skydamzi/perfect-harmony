@@ -238,15 +238,17 @@ public class UDPManager : MonoBehaviour
                 
                 byte[] bytes = System.Text.Encoding.UTF8.GetBytes(JsonUtility.ToJson(packet));
                 
-                if (isServer)
+                // Check if the socket is connected (Client mode) or not (Server mode)
+                if (udpClient.Client.Connected)
                 {
-                    // Server must specify endpoint
-                    udpClient.Send(bytes, bytes.Length, endpoint);
+                    // Client is connected to a specific host, so we cannot specify a destination endpoint here.
+                    // It will automatically go to the connected server.
+                    udpClient.Send(bytes, bytes.Length);
                 }
                 else
                 {
-                    // Client is connected, cannot specify endpoint (it goes to the connected server)
-                    udpClient.Send(bytes, bytes.Length);
+                    // Server is not connected, so we MUST specify the destination endpoint.
+                    udpClient.Send(bytes, bytes.Length, endpoint);
                 }
             }
             catch (Exception e)
