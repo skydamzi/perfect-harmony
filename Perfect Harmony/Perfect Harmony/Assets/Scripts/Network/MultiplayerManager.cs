@@ -336,27 +336,38 @@ public class MultiplayerManager : MonoBehaviour
             connectedPlayers[localPlayerId].isReady = true;
         }
 
-        MessagePacket packet = new MessagePacket(PacketType.PlayerReady, localPlayerId, null);
+        StartCoroutine(ReadyCheckRoutine());
+    }
 
-        if (isHost)
+    private System.Collections.IEnumerator ReadyCheckRoutine()
+    {
+        // Keep sending Ready packet until game starts or we are no longer ready
+        while (!gameStarted && connectedPlayers.ContainsKey(localPlayerId) && connectedPlayers[localPlayerId].isReady)
         {
-            // Host broadcasts their ready status to all clients
-            MultiplayerHost host = FindFirstObjectByType<MultiplayerHost>();
-            if (host != null)
+            MessagePacket packet = new MessagePacket(PacketType.PlayerReady, localPlayerId, null);
+
+            if (isHost)
             {
-                host.BroadcastToAll(packet);
+                // Host broadcasts their ready status to all clients
+                MultiplayerHost host = FindFirstObjectByType<MultiplayerHost>();
+                if (host != null)
+                {
+                    host.BroadcastToAllExcept(packet, localPlayerId);
+                }
+                
+                // Check immediately
+                CheckAllPlayersReady();
             }
-            
-            // Check immediately
-            CheckAllPlayersReady();
-        }
-        else
-        {
-            // Client sends ready status to host
-            if (udpManager != null)
+            else
             {
-                udpManager.SendPacket(packet);
+                // Client sends ready status to host
+                if (udpManager != null)
+                {
+                    udpManager.SendPacket(packet);
+                }
             }
+
+            yield return new WaitForSeconds(0.5f);
         }
     }
 

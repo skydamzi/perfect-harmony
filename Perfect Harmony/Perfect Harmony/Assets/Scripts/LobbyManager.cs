@@ -90,23 +90,29 @@ public class LobbyManager : MonoBehaviour
         catch (System.Exception e)
         {
             Debug.LogWarning("IP 주소 가져오기 실패 (소켓 방식), DNS 방식 시도: " + e.Message);
-            // Fallback to DNS method if socket fails
-            try
+        }
+
+        // Log all available IPs for debugging
+        try
+        {
+            var host = System.Net.Dns.GetHostEntry(System.Net.Dns.GetHostName());
+            Debug.Log("=== Available IP Addresses ===");
+            foreach (var ip in host.AddressList)
             {
-                var host = System.Net.Dns.GetHostEntry(System.Net.Dns.GetHostName());
-                foreach (var ip in host.AddressList)
+                if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
                 {
-                    if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    Debug.Log(" - " + ip.ToString());
+                    // If socket failed, prefer standard LAN IPs
+                    if (localIP == "127.0.0.1" && !ip.ToString().StartsWith("127.") && !ip.ToString().StartsWith("169.254"))
                     {
-                        return ip.ToString();
+                        localIP = ip.ToString();
                     }
                 }
             }
-            catch
-            {
-                // Both failed
-            }
+            Debug.Log("==============================");
         }
+        catch { }
+
         return localIP;
     }
     

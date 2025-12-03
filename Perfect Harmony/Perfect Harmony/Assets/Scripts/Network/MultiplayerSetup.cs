@@ -84,17 +84,16 @@ public class MultiplayerSetup : MonoBehaviour
         }
 
         // Ensure MultiplayerHost exists and is configured
-        MultiplayerHost host = FindFirstObjectByType<MultiplayerHost>();
-        if (host == null)
+        // Attach it to the same object as MultiplayerManager to ensure persistence
+        MultiplayerHost host = null;
+        if (mpManager != null)
         {
-            GameObject hostObj = new GameObject("MultiplayerHost");
-            host = hostObj.AddComponent<MultiplayerHost>();
-            if (mpManager != null) host.multiplayerManager = mpManager;
-            DontDestroyOnLoad(hostObj);
-        }
-        else
-        {
-            if (mpManager != null) host.multiplayerManager = mpManager;
+            host = mpManager.GetComponent<MultiplayerHost>();
+            if (host == null)
+            {
+                host = mpManager.gameObject.AddComponent<MultiplayerHost>();
+            }
+            host.multiplayerManager = mpManager;
         }
     }
 
