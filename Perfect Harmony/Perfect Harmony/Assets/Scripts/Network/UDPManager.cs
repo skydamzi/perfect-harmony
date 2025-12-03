@@ -139,16 +139,14 @@ public class UDPManager : MonoBehaviour
                 try { udpClient.Client.IOControl(SIO_UDP_CONNRESET, new byte[] { 0 }, null); } catch {}
             }
 
-            // Bind to any available port, not just an ephemeral one, to ensure we can receive replies
-            // But for clients, typically we don't bind to a specific port unless necessary.
-            // However, udpClient.Connect() implicitly binds.
+            // Note: We DO NOT use Connect() anymore. We will send to 'serverIP' explicitly.
+            // This avoids "socket already connected" or "socket not connected" confusion.
             
-            udpClient.Connect(serverIP, port);
             isRunning = true;
             receiveThread = new Thread(new ThreadStart(ReceiveLoop));
             receiveThread.IsBackground = true;
             receiveThread.Start();
-            Debug.Log($"UDP Client connected to {serverIP}:{port}");
+            Debug.Log($"UDP Client started (Targeting Server: {serverIP}:{port})");
             
             // Send connection packet to server
             SendPacket(new MessagePacket(PacketType.Connect, GetPlayerId(), null));
@@ -187,29 +185,18 @@ public class UDPManager : MonoBehaviour
             }
             catch (SocketException se)
             {
-                // Ignore ConnectionReset (10054) which happens when a previous send failed to reach destination
-                if (se.SocketErrorCode == SocketError.ConnectionReset)
-                {
-                    // Debug.LogWarning("UDP Connection Reset (10054) - Remote host closed connection. Ignoring.");
-                    continue; 
-                }
-                
-                if (isRunning)
-                {
-                    Debug.LogError($"Socket Error receiving UDP packet: {se.Message} ({se.SocketErrorCode})");
-                }
+                // Ignore ConnectionReset (10054)
+                if (se.SocketErrorCode == SocketError.ConnectionReset) continue;
+                if (isRunning) Debug.LogError($"Socket Error: {se.Message}");
             }
             catch (Exception e)
             {
-                if (isRunning) // Only log error if we're still supposed to be running
-                {
-                    Debug.LogError($"Error receiving UDP packet: {e.Message}");
-                }
+                if (isRunning) Debug.LogError($"Error receiving UDP packet: {e.Message}");
             }
         }
     }
 
-    // Send a packet (Client -> Server, or Server -> Connected Client if connected)
+    // Send a packet (Client -> Server, or fallback)
     public void SendPacket(MessagePacket packet)
     {
         if (udpClient != null)
@@ -217,7 +204,11 @@ public class UDPManager : MonoBehaviour
             try
             {
                 byte[] bytes = System.Text.Encoding.UTF8.GetBytes(JsonUtility.ToJson(packet));
-                udpClient.Send(bytes, bytes.Length);
+                
+                // Since we are not Connected, we MUST specify the destination.
+                // For SendPacket(), the destination is the 'serverIP'.
+                IPEndPoint serverEp = new IPEndPoint(IPAddress.Parse(serverIP), port);
+                udpClient.Send(bytes, bytes.Length, serverEp);
             }
             catch (Exception e)
             {
@@ -237,19 +228,8 @@ public class UDPManager : MonoBehaviour
                     Debug.Log($"Sending {packet.type} to {endpoint.Address}:{endpoint.Port}");
                 
                 byte[] bytes = System.Text.Encoding.UTF8.GetBytes(JsonUtility.ToJson(packet));
-                
-                // Check if the socket is connected (Client mode) or not (Server mode)
-                if (udpClient.Client.Connected)
-                {
-                    // Client is connected to a specific host, so we cannot specify a destination endpoint here.
-                    // It will automatically go to the connected server.
-                    udpClient.Send(bytes, bytes.Length);
-                }
-                else
-                {
-                    // Server is not connected, so we MUST specify the destination endpoint.
-                    udpClient.Send(bytes, bytes.Length, endpoint);
-                }
+                // Always use the endpoint version as our socket is now always unconnected
+                udpClient.Send(bytes, bytes.Length, endpoint);
             }
             catch (Exception e)
             {
