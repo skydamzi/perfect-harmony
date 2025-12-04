@@ -1,10 +1,10 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public class FallingNote : MonoBehaviour
 {
     [Header("Note Properties")]
     public NoteLane lane; // The lane this note belongs to
-    public int beatNumber; // The beat this note should be hit
+    public float beatNumber; // The beat this note should be hit
     public float spawnTime; // When this note was spawned
     public float targetTime; // When this note should be hit (based on beatNumber)
 

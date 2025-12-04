@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;  // Added this for the List<T>
 
@@ -134,15 +134,25 @@ public class GameStarter : MonoBehaviour
             noteSpawner.targetPositions = laneSetup.targetPositions;
         }
 
-        // Add some default spawn events if none exist
-        if (noteSpawner.spawnEvents.Count == 0)
+
+        // RhythmGameManager에 이미 곡(SongData)이 선택되어 있다면, 랜덤 패턴을 만들지 마라!
+        RhythmGameManager manager = RhythmGameManager.Instance;
+
+        // 만약 매니저가 있고, 매니저에 선택된 곡이 있고, 그 곡에 채보 데이터가 있다면?
+        if (manager != null && manager.selectedSong != null && manager.selectedSong.chartData.Count > 0)
         {
-            // Create a musically structured pattern based on measures and beats
+            // 아무것도 하지 않음 (이미 Manager가 LoadSong에서 데이터를 넣어줬을 테니까)
+            Debug.Log("GameStarter: SongData가 감지되어 기본 패턴 생성을 건너뜁니다.");
+        }
+        else if (noteSpawner.spawnEvents.Count == 0)
+        {
+            // 데이터가 없을 때만 테스트용  패턴 생성
             CreateMusicBasedSpawnPattern(noteSpawner);
         }
     }
 
     // Create a musically structured pattern based on 4/4 rhythm with varied note placement
+    // 곡데이터 없을때 테스트패턴
     private void CreateMusicBasedSpawnPattern(NoteSpawner noteSpawner)
     {
         // Start with a 16-beat pattern that reflects common 4/4 drum patterns

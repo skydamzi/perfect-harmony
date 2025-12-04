@@ -1,11 +1,11 @@
-using UnityEngine;
+﻿using UnityEngine;
 using System.Collections.Generic;
 
 // Structure to define when and where notes should spawn
 [System.Serializable]
 public class SpawnEvent
 {
-    public int beatNumber; // When to spawn the note (in beats)
+    public float beatNumber; // When to spawn the note (in beats)
     public NoteLane lane; // Which lane to spawn the note in
 }
 
@@ -121,7 +121,7 @@ public class NoteSpawner : MonoBehaviour
     }
     
     // Add a new spawn event
-    public void AddSpawnEvent(int beatNumber, NoteLane lane)
+    public void AddSpawnEvent(float beatNumber, NoteLane lane)
     {
         SpawnEvent newEvent = new SpawnEvent
         {

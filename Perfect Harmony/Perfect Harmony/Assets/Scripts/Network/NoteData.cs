@@ -1,13 +1,13 @@
-using System;
+﻿using System;
 
 [Serializable]
 public class NoteData
 {
-    public int beatNumber;
+    public float beatNumber;
     public int lane; // Corresponds to NoteLane enum value
     public float spawnTime;
 
-    public NoteData(int beatNumber, int lane, float spawnTime)
+    public NoteData(float beatNumber, int lane, float spawnTime)
     {
         this.beatNumber = beatNumber;
         this.lane = lane;
