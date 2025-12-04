@@ -361,9 +361,9 @@ MonoBehaviour:
   beatsPerMinute: 120
   beatDuration: 0.25
   beatsPerMeasure: 4
-  perfectWindow: 0.015
-  goodWindow: 0.03
-  okayWindow: 0.05
+  perfectWindow: 0.03
+  goodWindow: 0.05
+  okayWindow: 0.07
   isPlaying: 0
   isCountingDown: 0
   songPosition: 0
