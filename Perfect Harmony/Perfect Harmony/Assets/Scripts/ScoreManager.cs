@@ -101,7 +101,10 @@ public class ScoreManager : MonoBehaviour
             scoreText.text = "Score: " + currentScore;
 
         if (comboText != null)
-            comboText.text = "Combo: " + currentCombo;
+            if (debug_infiniteCombo)
+                comboText.text = "Combo: " + (currentCombo/2 -1);
+            else
+                comboText.text = "Combo: " + currentCombo;
     }
 
     // Show timing feedback to the player
