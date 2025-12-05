@@ -38,8 +38,48 @@ public class GameStarter : MonoBehaviour
         EnsureManagerExists<ScoreManager>("ScoreManager", SetupScoreManagerComponent);
         EnsureManagerExists<InputHandler>("InputHandler", SetupInputHandlerComponent);
         EnsureManagerExists<RhythmGameManager>("RhythmGameManager", SetupRhythmGameManagerComponent);
+        
+        SetupNetworkManagers();
 
         Debug.Log("Auto setup completed. Game ready!");
+    }
+
+    private void SetupNetworkManagers()
+    {
+        // Check if we are in a multiplayer game
+        MultiplayerManager mpManager = FindFirstObjectByType<MultiplayerManager>();
+        if (mpManager != null && mpManager.gameStarted)
+        {
+            // 1. Setup MultiplayerInputHandler (Scene specific)
+            MultiplayerInputHandler mpInput = FindFirstObjectByType<MultiplayerInputHandler>();
+            if (mpInput == null)
+            {
+                GameObject obj = new GameObject("MultiplayerInputHandler");
+                mpInput = obj.AddComponent<MultiplayerInputHandler>();
+            }
+            
+            // 2. Setup GameStateSyncManager (Persistent)
+            GameStateSyncManager stateSync = FindFirstObjectByType<GameStateSyncManager>();
+            if (stateSync == null)
+            {
+                GameObject obj = new GameObject("GameStateSyncManager");
+                stateSync = obj.AddComponent<GameStateSyncManager>();
+            }
+            // Important: Refresh references to link to new scene objects
+            stateSync.RefreshReferences();
+
+            // 3. Setup TimingSyncManager (Persistent)
+            TimingSyncManager timeSync = FindFirstObjectByType<TimingSyncManager>();
+            if (timeSync == null)
+            {
+                GameObject obj = new GameObject("TimingSyncManager");
+                timeSync = obj.AddComponent<TimingSyncManager>();
+            }
+            // Important: Refresh references to link to new scene objects
+            timeSync.RefreshReferences();
+            
+            Debug.Log("GameStarter: Network Managers Setup & Refreshed for Multiplayer");
+        }
     }
 
     // Helper method to ensure a manager exists
@@ -61,23 +101,28 @@ public class GameStarter : MonoBehaviour
     // Setup actions for each component
     private void SetupLaneSetupComponent(LaneSetup laneSetup)
     {
-        // Create required arrays if they don't exist
-        if (laneSetup.spawnPositions == null || laneSetup.spawnPositions.Length != 4)
+        // Create required arrays if they don't exist (Size 8 for 2 players)
+        if (laneSetup.spawnPositions == null || laneSetup.spawnPositions.Length != 8)
         {
-            laneSetup.spawnPositions = new Transform[4];
+            laneSetup.spawnPositions = new Transform[8];
         }
 
-        if (laneSetup.targetPositions == null || laneSetup.targetPositions.Length != 4)
+        if (laneSetup.targetPositions == null || laneSetup.targetPositions.Length != 8)
         {
-            laneSetup.targetPositions = new Transform[4];
+            laneSetup.targetPositions = new Transform[8];
         }
 
         // Create spawn and target positions
-        for (int i = 0; i < 4; i++)
+        // Lanes 0-3: Left side (Host)
+        // Lanes 4-7: Right side (Guest)
+        for (int i = 0; i < 8; i++)
         {
-            float x = -3 + i * 2; // -3, -1, 1, 3
+            // Default positions (User can move them)
+            float x = 0;
+            if (i < 4) x = -6.0f + (i * 1.5f); 
+            else x = 1.5f + ((i - 4) * 1.5f);
 
-            // Create spawn position
+            // Create spawn position IF MISSING
             if (laneSetup.spawnPositions[i] == null)
             {
                 GameObject spawnPos = new GameObject($"SpawnPos_Lane{i+1}");
@@ -86,7 +131,7 @@ public class GameStarter : MonoBehaviour
                 laneSetup.spawnPositions[i] = spawnPos.transform;
             }
 
-            // Create target position
+            // Create target position IF MISSING
             if (laneSetup.targetPositions[i] == null)
             {
                 GameObject targetPos = new GameObject($"TargetPos_Lane{i+1}");
@@ -97,7 +142,7 @@ public class GameStarter : MonoBehaviour
         }
 
         // Set values for spacing and heights
-        laneSetup.laneSpacing = 2.0f;
+        laneSetup.laneSpacing = 1.5f;
         laneSetup.spawnHeight = 5.0f;
         laneSetup.targetHeight = -3.0f;
     }

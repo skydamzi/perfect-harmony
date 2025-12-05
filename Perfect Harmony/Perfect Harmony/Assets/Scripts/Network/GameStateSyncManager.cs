@@ -7,8 +7,8 @@ public class GameStateSyncManager : MonoBehaviour
     public static GameStateSyncManager Instance { get; private set; }
 
     [Header("Game State Sync")]
-    public float stateSyncInterval = 0.5f; // Send state sync every 0.5 seconds
-    public float stateInterpolationTime = 0.1f; // Time to interpolate between states
+    public float stateSyncInterval = 0.0167f; // High frequency sync (~60Hz)
+    public float syncSmoothSpeed = 10.0f; // Faster smoothing to react quickly to sync packets
 
     [Header("Note Spawning")]
     public List<NoteData> serverNoteQueue = new List<NoteData>();
@@ -18,10 +18,8 @@ public class GameStateSyncManager : MonoBehaviour
     private TimingSyncManager timingSyncManager;
     private NoteSpawner noteSpawner;
 
-    private Queue<GameStateData> stateQueue = new Queue<GameStateData>();
-    private GameStateData targetGameState;
-    private float interpolationTimer = 0f;
-    private bool isInterpolating = false;
+    private float targetSongStartTime;
+    private bool hasSyncedStart = false;
 
     private void Awake()
     {
@@ -62,8 +60,7 @@ public class GameStateSyncManager : MonoBehaviour
         timingSyncManager = FindFirstObjectByType<TimingSyncManager>();
         noteSpawner = FindFirstObjectByType<NoteSpawner>();
         
-        // Clear queues on scene change to avoid processing old data
-        if (stateQueue != null) stateQueue.Clear();
+        hasSyncedStart = false;
         if (serverNoteQueue != null) serverNoteQueue.Clear();
         
         Debug.Log("GameStateSyncManager references refreshed.");
@@ -74,6 +71,7 @@ public class GameStateSyncManager : MonoBehaviour
     {
         if (mpManager != null && mpManager.isHost && mpManager.udpManager != null && mpManager.gameStarted)
         {
+            // We send the Host's songPosition directly
             GameStateData gameStateData = new GameStateData(
                 rhythmGameManager.actualSongStartTime,
                 rhythmGameManager.songPosition,
@@ -113,23 +111,43 @@ public class GameStateSyncManager : MonoBehaviour
     private void ProcessGameStatePacket(MessagePacket packet)
     {
         GameStateData gameStateData = packet.GetData<GameStateData>();
-        if (gameStateData != null && mpManager != null && !mpManager.isHost)
+        if (gameStateData != null && mpManager != null && !mpManager.isHost && rhythmGameManager != null)
         {
-            // Add to the state queue for interpolation
-            stateQueue.Enqueue(gameStateData);
+            // The server says: "At this exact moment (packet arrival), my songPosition is X"
+            // (Ideally we account for packet travel time, but for now assume fast connection)
             
-            // Keep only the last few states
-            if (stateQueue.Count > 5)
+            // Current time on client
+            float currentTime = Time.time;
+            
+            // The songPosition the server has.
+            float serverSongPos = gameStateData.songPosition;
+
+            // Calculate what actualSongStartTime SHOULD be to achieve this songPosition right now.
+            // formula: songPosition = currentTime - actualSongStartTime
+            // therefore: actualSongStartTime = currentTime - songPosition
+            float calculatedStartTime = currentTime - serverSongPos;
+
+            // Adjust for network latency (RTT / 2) if TimingSyncManager is available
+            if (timingSyncManager != null)
             {
-                stateQueue.Dequeue();
+                // If we know latency, the server actually sent this 'latency' seconds ago.
+                // So the server is actually further ahead by 'latency' seconds.
+                // But simpler approach: timingSyncManager already tracks offset.
+                // Let's rely on the direct calculation above for visual sync, 
+                // as it forces the client to match the server's playback cursor.
             }
-            
-            // If we're not currently interpolating, start interpolation
-            if (!isInterpolating && stateQueue.Count >= 2)
+
+            if (!hasSyncedStart)
             {
-                targetGameState = stateQueue.Dequeue();
-                interpolationTimer = 0f;
-                isInterpolating = true;
+                // Hard snap for the first sync
+                rhythmGameManager.actualSongStartTime = calculatedStartTime;
+                targetSongStartTime = calculatedStartTime;
+                hasSyncedStart = true;
+            }
+            else
+            {
+                // Smoothly drift towards the correct start time
+                targetSongStartTime = calculatedStartTime;
             }
         }
     }
@@ -155,7 +173,7 @@ public class GameStateSyncManager : MonoBehaviour
     {
         // Clear any previous game state and note queue when game starts
         serverNoteQueue.Clear();
-        stateQueue.Clear();
+        hasSyncedStart = false;
     }
 
     // Spawn note for client based on server's note data
@@ -228,41 +246,18 @@ public class GameStateSyncManager : MonoBehaviour
     // Update is called once per frame
     private void Update()
     {
-        // Interpolate game state if needed (for clients)
-        if (isInterpolating && targetGameState != null && mpManager != null && !mpManager.isHost)
+        // Smoothly adjust start time to match server
+        if (hasSyncedStart && rhythmGameManager != null && mpManager != null && !mpManager.isHost)
         {
-            interpolationTimer += Time.deltaTime;
-            
-            if (rhythmGameManager != null)
+            // If the difference is large, snap immediately
+            if (Mathf.Abs(rhythmGameManager.actualSongStartTime - targetSongStartTime) > 0.5f)
             {
-                // Calculate interpolation factor (0 to 1)
-                float t = Mathf.Clamp01(interpolationTimer / stateInterpolationTime);
-                
-                // Interpolate song position
-                rhythmGameManager.songPosition = Mathf.Lerp(rhythmGameManager.songPosition, targetGameState.songPosition, t);
-                
-                // Update beat based on interpolated song position
-                rhythmGameManager.currentBeat = Mathf.FloorToInt(rhythmGameManager.songPosition / rhythmGameManager.beatDuration);
-                rhythmGameManager.beatProgress = (rhythmGameManager.songPosition % rhythmGameManager.beatDuration) / rhythmGameManager.beatDuration;
-                
-                // Check if interpolation is complete
-                if (t >= 1f)
-                {
-                    // Apply final values
-                    rhythmGameManager.songPosition = targetGameState.songPosition;
-                    rhythmGameManager.currentBeat = targetGameState.currentBeat;
-                    rhythmGameManager.beatProgress = targetGameState.beatProgress;
-                    
-                    isInterpolating = false;
-                    
-                    // Check if there are more states to interpolate
-                    if (stateQueue.Count > 0)
-                    {
-                        targetGameState = stateQueue.Dequeue();
-                        interpolationTimer = 0f;
-                        isInterpolating = true;
-                    }
-                }
+                rhythmGameManager.actualSongStartTime = targetSongStartTime;
+            }
+            else
+            {
+                // Lerp for smooth correction
+                rhythmGameManager.actualSongStartTime = Mathf.Lerp(rhythmGameManager.actualSongStartTime, targetSongStartTime, Time.deltaTime * syncSmoothSpeed);
             }
         }
     }
