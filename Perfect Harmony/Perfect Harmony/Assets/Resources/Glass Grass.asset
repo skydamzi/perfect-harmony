@@ -12,9 +12,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 397a07c2e25960e45ab5d64a9cc7c878, type: 3}
   m_Name: Glass Grass
   m_EditorClassIdentifier: 
-  songTitle: Glass Grass
+  songTitle: Glass Grassland
   songInfo: from trashland  (bpm 120fix)
-  audioClip: {fileID: 8300000, guid: 007d8b62d6c483b47874d3a15c48fb64, type: 3}
+  audioClip: {fileID: 8300000, guid: f0b2841e7be67ff479e80517ca4d47d5, type: 3}
   beatsPerMinute: 120
   noteSpeed: 1.1
   chartData:
@@ -26,6 +26,8 @@ MonoBehaviour:
     lane: 3
   - beatNumber: 7.087
     lane: 1
+  - beatNumber: 7.087
+    lane: 2
   - beatNumber: 8.632
     lane: 2
   - beatNumber: 10.314
@@ -34,6 +36,8 @@ MonoBehaviour:
     lane: 3
   - beatNumber: 13.774
     lane: 0
+  - beatNumber: 13.774
+    lane: 3
   - beatNumber: 15.524
     lane: 3
   - beatNumber: 16.404
@@ -48,6 +52,10 @@ MonoBehaviour:
     lane: 3
   - beatNumber: 22.272
     lane: 3
+  - beatNumber: 22.272
+    lane: 0
+  - beatNumber: 23.999
+    lane: 0
   - beatNumber: 23.999
     lane: 3
   - beatNumber: 25.707
@@ -55,13 +63,19 @@ MonoBehaviour:
   - beatNumber: 26.493
     lane: 0
   - beatNumber: 27.36
+    lane: 0
+  - beatNumber: 27.36
     lane: 3
   - beatNumber: 29.18
     lane: 1
   - beatNumber: 30.988
     lane: 0
+  - beatNumber: 30.988
+    lane: 2
   - beatNumber: 32.582
     lane: 2
+  - beatNumber: 34.332
+    lane: 1
   - beatNumber: 34.332
     lane: 3
   - beatNumber: 36.042
@@ -100,3 +114,5 @@ MonoBehaviour:
     lane: 1
   - beatNumber: 55.193
     lane: 0
+  - beatNumber: 55.193
+    lane: 3
