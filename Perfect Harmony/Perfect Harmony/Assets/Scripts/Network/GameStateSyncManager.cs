@@ -54,6 +54,21 @@ public class GameStateSyncManager : MonoBehaviour
         }
     }
 
+    // Refresh references to scene objects (called by AutoSetup)
+    public void RefreshReferences()
+    {
+        mpManager = FindFirstObjectByType<MultiplayerManager>();
+        rhythmGameManager = FindFirstObjectByType<RhythmGameManager>();
+        timingSyncManager = FindFirstObjectByType<TimingSyncManager>();
+        noteSpawner = FindFirstObjectByType<NoteSpawner>();
+        
+        // Clear queues on scene change to avoid processing old data
+        if (stateQueue != null) stateQueue.Clear();
+        if (serverNoteQueue != null) serverNoteQueue.Clear();
+        
+        Debug.Log("GameStateSyncManager references refreshed.");
+    }
+
     // Send current game state to all players (host only)
     private void SendGameStateSync()
     {
@@ -157,12 +172,26 @@ public class GameStateSyncManager : MonoBehaviour
             return;
         }
 
-        // Get the spawn and target positions for this lane
-        int laneIndex = noteData.lane;
+        // The server sends the base lane (0-3).
+        // Just like the host, the client should spawn TWO notes:
+        // 1. Lane X (Left/Host side)
+        // 2. Lane X+4 (Right/Guest side)
+
+        int baseLane = noteData.lane;
+        
+        // Spawn Left (Host) Note
+        CreateClientNoteInstance(baseLane, noteData);
+        
+        // Spawn Right (Guest) Note
+        CreateClientNoteInstance(baseLane + 4, noteData);
+    }
+
+    private void CreateClientNoteInstance(int laneIndex, NoteData noteData)
+    {
         if (laneIndex >= noteSpawner.spawnPositions.Length || laneIndex >= noteSpawner.targetPositions.Length)
         {
-            Debug.LogError($"Lane index {laneIndex} is out of bounds for spawn/target positions!");
-            return;
+             // Out of bounds
+             return;
         }
 
         Transform spawnPos = noteSpawner.spawnPositions[laneIndex];
@@ -178,8 +207,7 @@ public class GameStateSyncManager : MonoBehaviour
         }
 
         // Set up the note properties using the note data
-        NoteLane laneEnum = (NoteLane)laneIndex;
-        note.lane = laneEnum;
+        note.lane = (NoteLane)laneIndex;
         note.beatNumber = noteData.beatNumber;
         note.spawnTime = noteData.spawnTime;
         note.targetPosition = targetPos;
@@ -187,6 +215,14 @@ public class GameStateSyncManager : MonoBehaviour
 
         // Calculate the actual target time based on server timing
         note.targetTime = rhythmGameManager.actualSongStartTime + rhythmGameManager.BeatToTime(note.beatNumber);
+        
+        // Register with InputHandler so we can hit it (if it's our side)
+        InputHandler inputHandler = FindFirstObjectByType<InputHandler>();
+        if (inputHandler != null)
+        {
+            inputHandler.AddNoteToLane(note, (NoteLane)laneIndex);
+            inputHandler.AddNoteToFallingList(note);
+        }
     }
 
     // Update is called once per frame

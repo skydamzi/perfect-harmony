@@ -70,17 +70,51 @@ public class NoteSpawner : MonoBehaviour
             return;
         }
 
-        // Get the spawn and target positions for this lane
-        int laneIndex = (int)spawnEvent.lane;
+        // Determine the base lane index (0-3)
+        int baseLaneIndex = (int)spawnEvent.lane;
 
-        if (laneIndex >= spawnPositions.Length || laneIndex >= targetPositions.Length)
+        // We want to spawn TWO notes:
+        // 1. For Player 1 (Left side: Lanes 0-3)
+        // 2. For Player 2 (Right side: Lanes 4-7)
+        
+        // --- Spawn for Player 1 ---
+        CreateNoteInstance(baseLaneIndex, spawnEvent);
+
+        // --- Spawn for Player 2 ---
+        // Map 0->4, 1->5, 2->6, 3->7
+        int p2LaneIndex = baseLaneIndex + 4;
+        CreateNoteInstance(p2LaneIndex, spawnEvent);
+
+        // Check if we're in multiplayer mode and are the host
+        // Note: We only send the original "base" lane (0-3) data. 
+        // The client will receive it and ALSO spawn two notes locally (if we update client logic),
+        // OR we can assume the client just follows the same logic if they use this spawner.
+        MultiplayerManager mpManager = FindFirstObjectByType<MultiplayerManager>();
+        GameStateSyncManager gameStateSyncManager = FindFirstObjectByType<GameStateSyncManager>();
+        if (mpManager != null && mpManager.isHost && mpManager.gameStarted)
         {
-            Debug.LogError($"Lane index {laneIndex} is out of bounds for spawn/target positions!");
+            // Send the note spawn event to other players
+            if (gameStateSyncManager != null)
+            {
+                // We send the raw beat/lane. The receiver should interpret how to display it.
+                NoteData noteData = new NoteData(spawnEvent.beatNumber, baseLaneIndex, Time.time);
+                gameStateSyncManager.SendNoteSpawn(noteData);
+            }
+        }
+    }
+
+    private void CreateNoteInstance(int laneIndex, SpawnEvent spawnEvent)
+    {
+        if (spawnPositions == null || laneIndex >= spawnPositions.Length || laneIndex >= targetPositions.Length)
+        {
+            // Lane might not be set up yet or out of bounds
             return;
         }
 
         Transform spawnPos = spawnPositions[laneIndex];
         Transform targetPos = targetPositions[laneIndex];
+
+        if (spawnPos == null || targetPos == null) return;
 
         // Instantiate the note
         GameObject noteObj = Instantiate(notePrefab, spawnPos.position, Quaternion.identity);
@@ -92,31 +126,23 @@ public class NoteSpawner : MonoBehaviour
         }
 
         // Set up the note properties
-        note.lane = spawnEvent.lane;
+        note.lane = (NoteLane)laneIndex; // Cast might be weird for >3, but InputHandler handles int casting
         note.beatNumber = spawnEvent.beatNumber;
         note.spawnTime = Time.time;
         note.targetPosition = targetPos;
-        note.spawnPosition = spawnPos; // Important: set the spawn position
+        note.spawnPosition = spawnPos;
 
         // Add to input handler's tracking
         InputHandler inputHandler = FindFirstObjectByType<InputHandler>();
         if (inputHandler != null)
         {
-            inputHandler.AddNoteToLane(note, spawnEvent.lane);
+            // Note: NoteLane enum only has 4 values likely. We need to be careful.
+            // We should probably cast to (NoteLane) for 0-3, but for 4-7 it's technically undefined in the enum
+            // IF the enum is small. Let's check NoteLane.cs. It has Lane1..Lane4.
+            // However, InputHandler usually casts enum to int. 
+            // Let's assume InputHandler array is big enough (we will fix InputHandler next).
+            inputHandler.AddNoteToLane(note, (NoteLane)laneIndex);
             inputHandler.AddNoteToFallingList(note);
-        }
-
-        // Check if we're in multiplayer mode and are the host
-        MultiplayerManager mpManager = FindFirstObjectByType<MultiplayerManager>();
-        GameStateSyncManager gameStateSyncManager = FindFirstObjectByType<GameStateSyncManager>();
-        if (mpManager != null && mpManager.isHost && mpManager.gameStarted)
-        {
-            // Send the note spawn event to other players
-            if (gameStateSyncManager != null)
-            {
-                NoteData noteData = new NoteData(spawnEvent.beatNumber, laneIndex, note.spawnTime);
-                gameStateSyncManager.SendNoteSpawn(noteData);
-            }
         }
     }
     

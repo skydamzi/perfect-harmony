@@ -35,7 +35,9 @@ public class InputHandler : MonoBehaviour
         }
 
         // Initialize the active notes array for each lane
-        activeNotesInLanes = new List<FallingNote>[System.Enum.GetValues(typeof(NoteLane)).Length];
+        // We need 8 lanes now (0-3 for P1, 4-7 for P2)
+        // NoteLane enum might only have 4 entries, so we use a fixed size of 8
+        activeNotesInLanes = new List<FallingNote>[8];
         for (int i = 0; i < activeNotesInLanes.Length; i++)
         {
             activeNotesInLanes[i] = new List<FallingNote>();
@@ -48,37 +50,44 @@ public class InputHandler : MonoBehaviour
         if (mpManager == null) mpManager = FindFirstObjectByType<MultiplayerManager>();
 
         // Check for key presses
-        for (int i = 0; i < laneKeys.Length && i < activeNotesInLanes.Length; i++)
+        // laneKeys.Length is typically 4 (D, F, J, K)
+        for (int i = 0; i < laneKeys.Length; i++)
         {
             if (Input.GetKeyDown(laneKeys[i]))
             {
-                NoteLane lane = (NoteLane)i;
+                // Determine which lane index to trigger based on player role
+                int targetLaneIndex = i; // Default to 0-3
 
-                // Check if we're in multiplayer mode
                 if (mpManager != null && mpManager.gameStarted)
                 {
+                    // If I am NOT the host (meaning I am the guest/client), 
+                    // my inputs should target the Right side (Lanes 4-7)
+                    if (!mpManager.isHost)
+                    {
+                        targetLaneIndex = i + 4;
+                    }
+                    
+                    // Note: In a real network scenario, we might want to send "I pressed Key 0" 
+                    // and let the server decide it's Lane 4. 
+                    // But for local simulation/visual feedback, we map it here.
+
                     // Lazy load input handler
                     if (mpInputHandler == null) mpInputHandler = FindFirstObjectByType<MultiplayerInputHandler>();
 
                     // Send input to server in multiplayer mode
+                    // We send the 'i' (0-3) because the other side knows who sent it
                     if (mpInputHandler != null)
                     {
-                        mpInputHandler.ProcessLocalInput(i);
+                        mpInputHandler.ProcessLocalInput(i); 
                     }
-                    else
-                    {
-                        // Fallback: process locally but also send to server
-                        ProcessLaneInput(lane);
-                        if (mpManager.udpManager != null)
-                        {
-                            mpManager.SendPlayerInput(i, Time.time);
-                        }
-                    }
+                    
+                    // Process locally on the CORRECT lane (0-3 or 4-7)
+                    ProcessLaneInput((NoteLane)targetLaneIndex);
                 }
                 else
                 {
-                    // Single player mode - process normally
-                    ProcessLaneInput(lane);
+                    // Single player mode - process normally on Left side (0-3)
+                    ProcessLaneInput((NoteLane)targetLaneIndex);
                 }
             }
         }

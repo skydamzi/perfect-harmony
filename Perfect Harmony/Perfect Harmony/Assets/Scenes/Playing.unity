@@ -401,7 +401,7 @@ AudioSource:
   serializedVersion: 4
   OutputAudioMixerGroup: {fileID: 0}
   m_audioClip: {fileID: 0}
-  m_Resource: {fileID: 0}
+  m_Resource: {fileID: 8300000, guid: f0b2841e7be67ff479e80517ca4d47d5, type: 3}
   m_PlayOnAwake: 0
   m_Volume: 1
   m_Pitch: 1
@@ -832,11 +832,19 @@ MonoBehaviour:
   - {fileID: 711687494}
   - {fileID: 86823092}
   - {fileID: 696003370}
+  - {fileID: 1132702355}
+  - {fileID: 1074627055}
+  - {fileID: 718514138}
+  - {fileID: 1386392360}
   targetPositions:
   - {fileID: 1160911077}
   - {fileID: 1708993520}
   - {fileID: 4635781}
   - {fileID: 1533688198}
+  - {fileID: 1103250246}
+  - {fileID: 525057285}
+  - {fileID: 862279800}
+  - {fileID: 79678039}
 --- !u!4 &248637015
 Transform:
   m_ObjectHideFlags: 0
@@ -934,11 +942,19 @@ MonoBehaviour:
   - {fileID: 244852145}
   - {fileID: 861028954}
   - {fileID: 1913254172}
+  - {fileID: 1132702355}
+  - {fileID: 1074627055}
+  - {fileID: 718514138}
+  - {fileID: 1386392360}
   targetPositions:
   - {fileID: 1563583897}
   - {fileID: 682010022}
   - {fileID: 1734125916}
   - {fileID: 1178434384}
+  - {fileID: 1103250246}
+  - {fileID: 525057285}
+  - {fileID: 862279800}
+  - {fileID: 79678039}
   laneVisuals:
   - {fileID: 0}
   - {fileID: 0}
@@ -3141,14 +3157,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: dad4e6fb2c2f02a4a85edccff4a045a1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  useObjectPooling: 0
+  useObjectPooling: 1
   hitSpritePrefab: {fileID: 1664402914864522450, guid: f4f3112907fcf5841bfea53d20db718f, type: 3}
-  perfectCount: 150
-  goodCount: 100
-  okayCount: 50
+  perfectCount: 100
+  goodCount: 50
+  okayCount: 25
   forceMin: 5
   forceMax: 10
-  initialPoolSize: 1000
+  initialPoolSize: 500
   canGrow: 1
   currentPoolCount: 0
   activeSpriteCount: 0

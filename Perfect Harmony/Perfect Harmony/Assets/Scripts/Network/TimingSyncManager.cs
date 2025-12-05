@@ -63,6 +63,14 @@ public class TimingSyncManager : MonoBehaviour
         InvokeRepeating("SendSyncPacket", 0f, syncInterval);
     }
 
+    // Refresh references to scene objects (called by AutoSetup)
+    public void RefreshReferences()
+    {
+        mpManager = FindFirstObjectByType<MultiplayerManager>();
+        rhythmGameManager = FindFirstObjectByType<RhythmGameManager>();
+        Debug.Log("TimingSyncManager references refreshed.");
+    }
+
     // Send synchronization packet to server
     private void SendSyncPacket()
     {
