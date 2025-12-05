@@ -141,7 +141,7 @@ public class MultiplayerManager : MonoBehaviour
                 break;
             case PacketType.NoteHit:
             case PacketType.NoteMiss:
-                HandleNoteResult(packet);
+                HandleNoteHit(packet);
                 break;
             case PacketType.SyncTime:
                 HandleSyncTime(packet);
@@ -274,9 +274,19 @@ public class MultiplayerManager : MonoBehaviour
         // SceneManager.LoadScene("Lobby");
     }
 
-    private void HandleNoteResult(MessagePacket packet)
+    private void HandleNoteHit(MessagePacket packet)
     {
-        Debug.Log($"Remote player {packet.playerId} {(packet.type == PacketType.NoteHit ? "hit" : "missed")} a note");
+        // Assuming payload contains NoteHitData (Lane, Timing)
+        NoteHitData hitData = packet.GetData<NoteHitData>();
+        if (hitData != null)
+        {
+            MultiplayerInputHandler mpInputHandler = FindFirstObjectByType<MultiplayerInputHandler>();
+            if (mpInputHandler != null)
+            {
+                mpInputHandler.HandleRemoteNoteHit(hitData.lane, hitData.timingResult);
+            }
+            Debug.Log($"Remote note hit on lane {hitData.lane}: {hitData.timingResult}");
+        }
     }
 
     private void HandleSyncTime(MessagePacket packet)
@@ -337,6 +347,25 @@ public class MultiplayerManager : MonoBehaviour
         }
 
         StartCoroutine(ReadyCheckRoutine());
+    }
+
+    public void SendNoteHit(int lane, TimingResult result)
+    {
+        NoteHitData data = new NoteHitData(lane, result, Time.time);
+        MessagePacket packet = new MessagePacket(PacketType.NoteHit, localPlayerId, data);
+
+        if (isHost)
+        {
+            MultiplayerHost host = FindFirstObjectByType<MultiplayerHost>();
+            if (host != null)
+            {
+                host.BroadcastToAllExcept(packet, localPlayerId);
+            }
+        }
+        else if (udpManager != null)
+        {
+            udpManager.SendPacket(packet);
+        }
     }
 
     private System.Collections.IEnumerator ReadyCheckRoutine()

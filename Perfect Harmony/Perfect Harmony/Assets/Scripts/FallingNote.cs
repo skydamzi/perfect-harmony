@@ -42,6 +42,17 @@ public class FallingNote : MonoBehaviour
                 RhythmGameController.Instance.OnNoteHit(timingResult, this);
             }
 
+            // --- Network Sync: Tell everyone I hit this note ---
+            if (MultiplayerManager.Instance != null && MultiplayerManager.Instance.gameStarted)
+            {
+                // IMPORTANT: Only send if I am the owner of this lane!
+                // Host owns 0-3, Client owns 4-7.
+                // Simple check: If I pressed the key, InputHandler called this.
+                // So we can just send it.
+                MultiplayerManager.Instance.SendNoteHit((int)lane, timingResult);
+            }
+            // ---------------------------------------------------
+
             // Visual/auditory feedback based on timing
             // Change color based on timing result
             SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();

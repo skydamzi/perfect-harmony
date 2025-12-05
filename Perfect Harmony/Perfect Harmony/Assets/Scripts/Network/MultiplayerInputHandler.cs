@@ -120,6 +120,17 @@ public class MultiplayerInputHandler : MonoBehaviour
         // Mark the note as hit
         note.isHit = true;
         
+        // 1. Visual Feedback: Spawn Hit Particles at the note's position
+        if (SpriteEffectManager.Instance != null)
+        {
+            SpriteEffectManager.Instance.SpawnHitSprites(timingResult, note.transform.position);
+        }
+        
+        // 2. Visual Feedback: Change note color/visuals before destroying (optional, acts as hit confirmation)
+        // FallingNote.OnNoteHit does this, but we want to avoid double-counting logic inside it if any.
+        // However, FallingNote.OnNoteHit also notifies InputHandler, ScoreManager, etc.
+        // Since we handle Score explicitly here, let's just do visuals.
+        
         // Calculate score based on timing result
         int scoreToAdd = GetScoreForTimingResult(timingResult);
         
@@ -127,18 +138,26 @@ public class MultiplayerInputHandler : MonoBehaviour
         if (scoreManager != null)
         {
             // For remote player, we don't update the local score directly
-            // Instead we trust the server's judgment and score update
-            scoreManager.ProcessHit(timingResult);
+            // Instead we trust the server's judgment and score update (which comes via PlayerScore packet usually)
+            // BUT, for immediate feedback, we might want to update a "Remote Score" display if we had one.
+            // Current ScoreManager seems single-player focused or shared.
+            // If we want to see the remote player's score update, we rely on HandleRemoteScoreUpdate.
         }
 
         // Send score update to server
         if (mpManager != null)
         {
-            mpManager.SendPlayerScore(scoreManager.currentScore, scoreManager.currentCombo, timingResult);
+            // Wait, if *I* calculated the remote hit (which shouldn't happen, usually remote sends their own score),
+            // Actually, ProcessRemoteNoteHit is called when WE receive an input packet and simulate the hit.
+            // But usually, the client sends "I hit this note" (Score Packet) OR "I pressed this key" (Input Packet).
+            // If we are processing Input Packet, we are simulating the hit.
+            
+            // NOTE: In this architecture, usually each player judges their OWN hits and sends Score/Hit packets.
+            // If we are simulating remote input, we are just visualizing.
         }
         
-        // Report to game controller
-        gameController.OnNoteHit(timingResult, note);
+        // Report to game controller (optional, mostly for events)
+        // gameController.OnNoteHit(timingResult, note); // Careful not to double count score
         
         // Remove the note from active lanes
         if (inputHandler != null)
@@ -146,10 +165,10 @@ public class MultiplayerInputHandler : MonoBehaviour
             inputHandler.RemoveNoteFromLane(note, note.lane);
         }
         
-        // Destroy the note
-        Destroy(note.gameObject, 0.1f);
+        // Destroy the note immediately with feedback
+        Destroy(note.gameObject);
         
-        Debug.Log($"Remote player {playerId} hit note with {timingResult}, score: {scoreToAdd}");
+        Debug.Log($"Remote player {playerId} hit note with {timingResult}");
     }
 
     // Get score value for timing result
@@ -174,7 +193,39 @@ public class MultiplayerInputHandler : MonoBehaviour
             mpManager.connectedPlayers[playerId].score = score;
             mpManager.connectedPlayers[playerId].combo = combo;
             
+            // We could show combo popup here for remote player
             Debug.Log($"Player {playerId} score updated: {score}, combo: {combo}");
+        }
+    }
+
+    // Handle explicit note hit packet from server (Best for visual sync)
+    public void HandleRemoteNoteHit(int laneIndex, TimingResult timingResult)
+    {
+        // Determine position for effects based on lane index
+        if (inputHandler == null) return;
+        
+        // Find the target position for this lane to spawn effects there
+        // We can access LaneSetup or NoteSpawner through references
+        NoteSpawner noteSpawner = FindFirstObjectByType<NoteSpawner>();
+        if (noteSpawner != null && laneIndex < noteSpawner.targetPositions.Length)
+        {
+            Vector3 targetPos = noteSpawner.targetPositions[laneIndex].position;
+            
+            // 1. Spawn Hit Particles
+            if (SpriteEffectManager.Instance != null)
+            {
+                SpriteEffectManager.Instance.SpawnHitSprites(timingResult, targetPos);
+            }
+
+            // 2. Find and destroy the closest note in that lane (Visual cleanup)
+            // Because the remote player already hit it, we should remove it from our screen too
+            FallingNote noteToRemove = FindClosestNoteInHitWindow((NoteLane)laneIndex, Time.time); // Use generic time
+            if (noteToRemove != null)
+            {
+                noteToRemove.isHit = true;
+                Destroy(noteToRemove.gameObject);
+                inputHandler.RemoveNoteFromLane(noteToRemove, (NoteLane)laneIndex);
+            }
         }
     }
 
