@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.UI;
 
 public class ScoreManager : MonoBehaviour
@@ -16,6 +16,7 @@ public class ScoreManager : MonoBehaviour
     [Header("Combo Settings")]
     public int comboMultiplier = 1;
     public int maxCombo = 0;
+    public bool debug_infiniteCombo = false; //채보 제작용.  1이면 콤보 줄지 않음
 
     public int currentScore = 0;
     public int currentCombo = 0;
@@ -71,7 +72,14 @@ public class ScoreManager : MonoBehaviour
     public void ProcessMiss()
     {
         totalNotesMissed++;
-        currentCombo = 0; // Reset combo on miss
+        if (debug_infiniteCombo) // ONLY for Debug
+        {
+            currentCombo++;
+            if (currentCombo > maxCombo)
+                maxCombo = currentCombo;
+        }
+        else
+            currentCombo = 0; // Reset combo on miss
 
         // Update UI
         UpdateUI();

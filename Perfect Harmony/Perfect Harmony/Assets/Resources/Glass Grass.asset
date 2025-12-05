@@ -13,32 +13,90 @@ MonoBehaviour:
   m_Name: Glass Grass
   m_EditorClassIdentifier: 
   songTitle: Glass Grass
-  songInfo: from trashland
+  songInfo: from trashland  (bpm 120fix)
   audioClip: {fileID: 8300000, guid: 007d8b62d6c483b47874d3a15c48fb64, type: 3}
   beatsPerMinute: 120
-  noteSpeed: 2
+  noteSpeed: 1.1
   chartData:
-  - beatNumber: 5.2
+  - beatNumber: 1.804
     lane: 3
-  - beatNumber: 7
+  - beatNumber: 3.47
     lane: 3
-  - beatNumber: 9
+  - beatNumber: 5.25
     lane: 3
-  - beatNumber: 12
+  - beatNumber: 7.087
     lane: 1
-  - beatNumber: 16
+  - beatNumber: 8.632
     lane: 2
-  - beatNumber: 22
+  - beatNumber: 10.314
     lane: 0
-  - beatNumber: 22
+  - beatNumber: 12.014
     lane: 3
-  - beatNumber: 30
+  - beatNumber: 13.774
     lane: 0
-  - beatNumber: 36
+  - beatNumber: 15.524
     lane: 3
-  - beatNumber: 44
+  - beatNumber: 16.404
     lane: 1
-  - beatNumber: 44.7
+  - beatNumber: 17.192
     lane: 0
-  - beatNumber: 44.7
+  - beatNumber: 18.928
+    lane: 1
+  - beatNumber: 19.804
+    lane: 2
+  - beatNumber: 20.618
+    lane: 3
+  - beatNumber: 22.272
+    lane: 3
+  - beatNumber: 23.999
+    lane: 3
+  - beatNumber: 25.707
+    lane: 2
+  - beatNumber: 26.493
+    lane: 0
+  - beatNumber: 27.36
+    lane: 3
+  - beatNumber: 29.18
+    lane: 1
+  - beatNumber: 30.988
+    lane: 0
+  - beatNumber: 32.582
+    lane: 2
+  - beatNumber: 34.332
+    lane: 3
+  - beatNumber: 36.042
+    lane: 1
+  - beatNumber: 37.781
+    lane: 0
+  - beatNumber: 39.468
+    lane: 1
+  - beatNumber: 40.422
+    lane: 0
+  - beatNumber: 41.279
+    lane: 2
+  - beatNumber: 42.886
+    lane: 3
+  - beatNumber: 44.59
+    lane: 3
+  - beatNumber: 46.401
+    lane: 0
+  - beatNumber: 48.056
+    lane: 1
+  - beatNumber: 48.462
+    lane: 1
+  - beatNumber: 49.845
+    lane: 1
+  - beatNumber: 50.698
+    lane: 0
+  - beatNumber: 51.475
+    lane: 2
+  - beatNumber: 51.986
+    lane: 3
+  - beatNumber: 53.196
+    lane: 0
+  - beatNumber: 53.588
+    lane: 2
+  - beatNumber: 54.692
+    lane: 1
+  - beatNumber: 55.193
     lane: 0

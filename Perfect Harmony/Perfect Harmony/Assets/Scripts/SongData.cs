@@ -11,7 +11,7 @@ public class SongData : ScriptableObject
     public AudioClip audioClip; // 음악 파일
     public float beatsPerMinute;         // 곡의 BPM (예: 120)
 
-    [Header("Noet speed")]
+    [Header("Noet speed (smaller number, faster note)")]
     public float noteSpeed = 2.0f; // 노트가 떨어지는 시간 (작을수록 빠름, 기본 2.0)
     [Header("채보 데이터")]
     public List<SpawnEvent> chartData;

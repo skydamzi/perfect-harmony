@@ -54,7 +54,7 @@ public class RhythmGameManager : MonoBehaviour
 
     private void Start()
     {
-        // 1. AudioSource가 없으면 자동으로 추가
+        
         if (audioSource == null)
         {
             audioSource = GetComponent<AudioSource>();
@@ -64,7 +64,6 @@ public class RhythmGameManager : MonoBehaviour
             }
         }
 
-        // 2. SongData가 할당되어 있다면 로드
         if (selectedSong != null)
         {
             LoadSong(selectedSong);
