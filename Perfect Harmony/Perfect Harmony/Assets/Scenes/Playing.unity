@@ -1728,7 +1728,7 @@ MonoBehaviour:
   timingText: {fileID: 1246563848}
   comboMultiplier: 1
   maxCombo: 0
-  debug_infiniteCombo: 1
+  debug_infiniteCombo: 0
   currentScore: 0
   currentCombo: 0
 --- !u!4 &751239957
