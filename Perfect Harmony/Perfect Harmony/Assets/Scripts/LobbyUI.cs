@@ -95,22 +95,39 @@ public class LobbyUI : MonoBehaviour
     
     private void JoinGame()
     {
-        if (lobbyManager != null)
+        if (lobbyManager == null || inviteCodeInput == null || string.IsNullOrEmpty(inviteCodeInput.text))
         {
-            if (inviteCodeInput != null && !string.IsNullOrEmpty(inviteCodeInput.text))
-            {
-                lobbyManager.JoinGame(inviteCodeInput.text.Trim());
-                if (statusText) statusText.text = "Joining game with code: " + inviteCodeInput.text;
+            if (statusText) statusText.text = "Please enter Host IP and Port!";
+            return;
+        }
 
-                // Client has attempted to join, disable join/create buttons
-                createGameButton.interactable = false;
-                joinGameButton.interactable = false;
-            }
-            else
+        string inputText = inviteCodeInput.text.Trim();
+        string[] parts = inputText.Split(':');
+        
+        string ip = parts[0];
+        int port = 8080; // Default port
+
+        if (parts.Length > 1)
+        {
+            if (!int.TryParse(parts[1], out port))
             {
-                if (statusText) statusText.text = "Please enter Host IP!";
+                if (statusText) statusText.text = "Invalid Port number!";
+                return;
             }
         }
+
+        if (string.IsNullOrEmpty(ip))
+        {
+            if (statusText) statusText.text = "IP address cannot be empty!";
+            return;
+        }
+
+        lobbyManager.JoinGame(ip, port);
+        if (statusText) statusText.text = $"Joining game at {ip}:{port}...";
+
+        // Disable buttons after attempting to join
+        createGameButton.interactable = false;
+        joinGameButton.interactable = false;
     }
 
     private void OnStartGameClicked()

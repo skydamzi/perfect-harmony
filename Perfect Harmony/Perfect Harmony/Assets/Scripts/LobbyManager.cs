@@ -50,27 +50,27 @@ public class LobbyManager : MonoBehaviour
     }
     
     // 클라이언트(초대 받은 사람)로 연결
-    public void JoinGame(string inviteCode)
+    public void JoinGame(string ip, int port)
     {
-        if (string.IsNullOrEmpty(inviteCode))
+        if (string.IsNullOrEmpty(ip))
         {
             Debug.LogError("IP 주소가 없습니다!");
             return;
         }
         
-        Debug.Log(inviteCode + " 주소로 게임에 참가 시도 중...");
+        Debug.Log($"{ip}:{port} 주소로 게임에 참가 시도 중...");
         
         // 멀티플레이어 설정
         MultiplayerSetup setup = GetComponent<MultiplayerSetup>();
         if (setup != null)
         {
-            setup.SetAsClient(inviteCode); // 입력된 IP 주소 사용
+            setup.SetAsClient(ip, port); // 입력된 IP 주소와 포트 사용
         }
         else
         {
             GameObject setupObj = new GameObject("MultiplayerSetup");
             setup = setupObj.AddComponent<MultiplayerSetup>();
-            setup.SetAsClient(inviteCode);
+            setup.SetAsClient(ip, port);
         }
     }
     

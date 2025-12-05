@@ -120,6 +120,26 @@ public class MultiplayerSetup : MonoBehaviour
         }
     }
 
+    // Method to switch to client mode with a specific port
+    public void SetAsClient(string ip, int newPort)
+    {
+        isHost = false;
+        serverIP = ip;
+        port = newPort;
+        
+        // Explicitly set UDPManager state
+        if (udpManager != null)
+        {
+            udpManager.isServer = false;
+            udpManager.InitializeClient(ip, newPort);
+        }
+
+        if (mpManager != null)
+        {
+            mpManager.isHost = false;
+        }
+    }
+
     // Method to start the multiplayer game scene
     public void StartMultiplayerGame()
     {

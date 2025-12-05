@@ -96,6 +96,16 @@ public class UDPManager : MonoBehaviour
         StartClient();
     }
 
+    // Initialize and start client with specific IP and port
+    public void InitializeClient(string ip, int newPort)
+    {
+        StopConnection();
+        serverIP = ip;
+        port = newPort;
+        isServer = false;
+        StartClient();
+    }
+
     // Start the UDP server
     private void StartServer()
     {
