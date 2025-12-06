@@ -1,12 +1,16 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
 
 public class FrameCounter : MonoBehaviour
 {
     private float deltaTime = 0f;
 
-    [SerializeField] private int size = 25;
-    [SerializeField] private Color color = Color.red;
+    [Header("Setting")]
+    public bool showFPS = true; // 프레임카운터 on/off
+
+    [Header("UI Reference")]
+    public Text uiText;
 
     // 프레임 저장용
     private List<float> frameTimes = new List<float>();
@@ -21,22 +25,12 @@ public class FrameCounter : MonoBehaviour
         frameTimes.Add(Time.unscaledDeltaTime);
         if (frameTimes.Count > sampleCount)
             frameTimes.RemoveAt(0);
-    }
-
-    private void OnGUI()
-    {
-        GUIStyle style = new GUIStyle();
-
-        Rect rect = new Rect(30, 30, Screen.width, Screen.height);
-        style.alignment = TextAnchor.UpperLeft;
-        style.fontSize = size;
-        style.normal.textColor = color;
 
         // 현재 FPS
         float ms = deltaTime * 1000f;
         float fps = 1f / deltaTime;
 
-        // ▼ 10% / 1% Low FPS
+        // ▼ 10% / 1% Low FPS 
         float low10 = CalcPercentLowFPS(10);
         float low1 = CalcPercentLowFPS(1);
 
@@ -48,9 +42,14 @@ public class FrameCounter : MonoBehaviour
             $"10% Low: {low10:0.} FPS\n" +
             $"1% Low:  {low1:0.} FPS\n" +
             $"Lowest:  {lowest:0.} FPS";
-
-        GUI.Label(rect, text, style);
+        if (uiText != null)
+        {
+            uiText.enabled = showFPS;
+            if (showFPS)
+                uiText.text = text;
+        }
     }
+
 
     /// <summary>
     /// percent% Low FPS 계산
