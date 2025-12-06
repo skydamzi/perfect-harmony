@@ -137,6 +137,12 @@ public class RhythmGameManager : MonoBehaviour
             {
                 beatTime += beatDuration;
             }
+
+            // Check if song has finished
+            if (audioSource != null && audioSource.clip != null && songPosition > audioSource.clip.length + 1.0f)
+            {
+                FinishGame();
+            }
         }
     }
     public void LoadSong(SongData song)
@@ -224,6 +230,21 @@ public class RhythmGameManager : MonoBehaviour
     {
         isPlaying = false;
         if (audioSource != null) audioSource.Stop();
+    }
+
+    public void FinishGame()
+    {
+        if (!isPlaying) return;
+
+        Debug.Log("Game Finished!");
+        StopSong();
+
+        // Show performance results
+        FrameCounter fc = FindFirstObjectByType<FrameCounter>();
+        if (fc != null)
+        {
+            fc.ShowSessionResult();
+        }
     }
 
     // Convert beat number to time in seconds
