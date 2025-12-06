@@ -16,6 +16,24 @@ public class FrameCounter : MonoBehaviour
     private List<float> frameTimes = new List<float>();
     private const int sampleCount = 200;   // 저장할 샘플 수
 
+    void Start()
+    {
+        if (uiText != null)
+        {
+            // 텍스트 정렬을 하단 중앙으로 변경
+            uiText.alignment = TextAnchor.LowerCenter;
+
+            // UI 위치를 화면 하단 중앙으로 이동
+            if (uiText.rectTransform != null)
+            {
+                uiText.rectTransform.anchorMin = new Vector2(0.5f, 0f);
+                uiText.rectTransform.anchorMax = new Vector2(0.5f, 0f);
+                uiText.rectTransform.pivot = new Vector2(0.5f, 0f);
+                uiText.rectTransform.anchoredPosition = new Vector2(0, 10f); // 하단에서 약간 위로
+            }
+        }
+    }
+
     void Update()
     {
         // 부드럽게 평균낸 deltaTime
@@ -59,14 +77,18 @@ public class FrameCounter : MonoBehaviour
         if (frameTimes.Count == 0) return 0f;
 
         List<float> sorted = new List<float>(frameTimes);
-        sorted.Sort(); // 오름차순: 큰 값일수록 FPS 낮음
+        sorted.Sort(); // 오름차순: 값이 작을수록(빠를수록) 앞, 클수록(느릴수록) 뒤
 
         int count = Mathf.FloorToInt(sorted.Count * (percent / 100f));
         count = Mathf.Clamp(count, 1, sorted.Count);
 
         float sum = 0f;
+        // 수정: Low FPS는 '프레임 시간이 긴(느린)' 프레임들의 평균이므로
+        // 오름차순 정렬된 리스트의 '뒤쪽(큰 값)'을 가져와야 함.
         for (int i = 0; i < count; i++)
-            sum += sorted[i];
+        {
+            sum += sorted[sorted.Count - 1 - i];
+        }
 
         float avgFrameTime = sum / count;
         return 1f / avgFrameTime;
