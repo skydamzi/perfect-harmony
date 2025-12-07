@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using System.Collections;
 
 public class FallingNote : MonoBehaviour
 {
@@ -54,27 +55,61 @@ public class FallingNote : MonoBehaviour
             // ---------------------------------------------------
 
             // Visual/auditory feedback based on timing
-            // Change color based on timing result
+            Color hitColor = Color.white;
             SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
+            
             if (spriteRenderer != null)
             {
                 switch (timingResult)
                 {
                     case TimingResult.Perfect:
-                        spriteRenderer.color = Color.yellow; // Perfect hits show yellow
+                        hitColor = Color.yellow; 
                         break;
                     case TimingResult.Good:
-                        spriteRenderer.color = Color.green; // Good hits show green
+                        hitColor = Color.green; 
                         break;
                     case TimingResult.Okay:
-                        spriteRenderer.color = Color.blue; // Okay hits show blue
+                        hitColor = Color.blue; 
                         break;
                 }
+                
+                // Start the hit animation
+                StartCoroutine(AnimateNoteHit(spriteRenderer, hitColor));
             }
-
-            // Destroy the note after a short delay
-            Destroy(gameObject, 0.1f);
+            else
+            {
+                // Fallback if no sprite renderer
+                Destroy(gameObject, 0.1f);
+            }
         }
+    }
+
+    private IEnumerator AnimateNoteHit(SpriteRenderer spriteRenderer, Color hitColor)
+    {
+        float duration = 0.2f; // Animation duration
+        float elapsed = 0f;
+        Vector3 initialScale = transform.localScale;
+
+        // Set initial color
+        spriteRenderer.color = hitColor;
+
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float t = elapsed / duration;
+
+            // Shrink Y scale, keep X scale
+            // Using Lerp to go from initial Y to 0
+            float newY = Mathf.Lerp(initialScale.y, 0f, t);
+            transform.localScale = new Vector3(initialScale.x, newY, initialScale.z);
+
+            yield return null;
+        }
+
+        // Ensure completely invisible/gone
+        transform.localScale = new Vector3(initialScale.x, 0f, initialScale.z);
+
+        Destroy(gameObject);
     }
 
     void Start()
