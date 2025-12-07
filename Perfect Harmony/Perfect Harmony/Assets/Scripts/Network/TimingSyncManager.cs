@@ -9,6 +9,7 @@ public class TimingSyncManager : MonoBehaviour
     public float syncInterval = 1.0f; // Send sync packets every second
     public float maxSyncHistory = 10; // Number of sync records to keep for calculation
     public float networkTimeOffset = 0f; // Calculated offset between local and server time
+    public float packetExchangeLatency = 0f; // Round-trip time in milliseconds
 
     [Header("Rhythm Sync")]
     public float serverSongPosition = 0f;
@@ -61,6 +62,7 @@ public class TimingSyncManager : MonoBehaviour
 
         // Start sync timer
         InvokeRepeating("SendSyncPacket", 0f, syncInterval);
+        InvokeRepeating("SendPingPacket", 0.5f, 1.0f);
     }
 
     // Refresh references to scene objects (called by AutoSetup)
@@ -88,6 +90,16 @@ public class TimingSyncManager : MonoBehaviour
         }
     }
 
+    // Send ping packet to server for latency measurement
+    private void SendPingPacket()
+    {
+        if (mpManager != null && mpManager.udpManager != null && !mpManager.isHost)
+        {
+            MessagePacket packet = new MessagePacket(PacketType.Ping, mpManager.localPlayerId, null);
+            mpManager.udpManager.SendPacket(packet);
+        }
+    }
+
     // Handle received packets
     private void HandlePacketReceived(MessagePacket packet, System.Net.IPEndPoint sender)
     {
@@ -98,6 +110,9 @@ public class TimingSyncManager : MonoBehaviour
                 break;
             case PacketType.SyncGameState:
                 ProcessGameStatePacket(packet);
+                break;
+            case PacketType.Ping:
+                ProcessPingPacket(packet);
                 break;
         }
     }
@@ -157,6 +172,19 @@ public class TimingSyncManager : MonoBehaviour
             serverSongPosition = gameStateData.songPosition;
             serverCurrentBeat = gameStateData.currentBeat;
             serverSongStartTime = gameStateData.startTime;
+        }
+    }
+
+    // Process ping packet (Pong)
+    private void ProcessPingPacket(MessagePacket packet)
+    {
+        // Only process if it's our own ping echoed back
+        if (mpManager != null && packet.playerId == mpManager.localPlayerId)
+        {
+            // Use high-precision system ticks for RTT calculation (10,000 ticks = 1 ms)
+            // This avoids frame-rate quantization (e.g. 16.6ms at 60fps)
+            double rttMs = (System.DateTime.UtcNow.Ticks - packet.systemTimestamp) / 10000.0;
+            packetExchangeLatency = (float)rttMs; 
         }
     }
 

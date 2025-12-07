@@ -99,6 +99,11 @@ public class MultiplayerManager : MonoBehaviour
         GUILayout.Space(10);
         GUILayout.Label($"Last Packet: {lastPacketTypeReceived} @ {lastPacketTime:F2}");
 
+        if (TimingSyncManager.Instance != null && !isHost)
+        {
+            GUILayout.Label($"Packet Exchange Latency: {TimingSyncManager.Instance.packetExchangeLatency:F1} ms");
+        }
+
         if (GUILayout.Button("Force Load 'Playing' Scene"))
         {
             SceneManager.LoadSceneAsync("Playing");

@@ -103,7 +103,8 @@ public class MultiplayerHost : MonoBehaviour
                  break;
             
             case PacketType.Ping:
-                // Reply with Pong (optional, or just ignore if client sends ping)
+                // Reply to the sender
+                UDPManager.Instance.SendPacketTo(packet, senderEndpoint);
                 break;
                 
             case PacketType.PlayerInput:
