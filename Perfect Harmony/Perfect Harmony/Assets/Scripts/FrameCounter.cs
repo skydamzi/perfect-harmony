@@ -146,7 +146,7 @@ public class FrameCounter : MonoBehaviour
             outline.effectDistance = new Vector2(2, -2);
 
             // 다른 모든 캔버스 비활성화 (이 캔버스 제외)
-            Canvas[] allCanvases = FindObjectsOfType<Canvas>();
+            Canvas[] allCanvases = UnityEngine.Object.FindObjectsByType<Canvas>(FindObjectsSortMode.None);
             foreach (Canvas c in allCanvases)
             {
                 // 자기 자신의 캔버스는 끄지 않음
