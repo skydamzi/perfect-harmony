@@ -1,0 +1,9 @@
+Title Font - Unica One
+Other - Mulish
+
+Title Effects: 
+Outline: #FFF(White), 12PX 
+Shadow: X 0, Y 4, Blur 4, Spread 0 | #000(Black) 25% Opacity
+
+Other Text Effects:
+Color: UI Primary Color (Pink, Orange etc.) - 90%, Bold
