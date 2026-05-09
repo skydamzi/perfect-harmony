@@ -1,6 +1,6 @@
 fileFormatVersion: 2
-guid: 2cda990e2423bbf4892e6590ba056729
-DefaultImporter:
+guid: ca3f44c2efae4dd418e0fbffc0eb5071
+PrefabImporter:
   externalObjects: {}
   userData: 
   assetBundleName: 
@@ -10,5 +10,5 @@ AssetOrigin:
   productId: 170650
   packageName: Sleek essential UI pack
   packageVersion: 1.0
-  assetPath: Assets/Scenes/SampleScene.unity
+  assetPath: Assets/UI pack/Prefabs/Sliders/Red slider.prefab
   uploadId: 372817

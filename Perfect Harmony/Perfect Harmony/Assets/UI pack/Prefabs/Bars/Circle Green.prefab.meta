@@ -1,6 +1,6 @@
 fileFormatVersion: 2
-guid: 2cda990e2423bbf4892e6590ba056729
-DefaultImporter:
+guid: ef0e924a04b82674ca699e6ff30af008
+PrefabImporter:
   externalObjects: {}
   userData: 
   assetBundleName: 
@@ -10,5 +10,5 @@ AssetOrigin:
   productId: 170650
   packageName: Sleek essential UI pack
   packageVersion: 1.0
-  assetPath: Assets/Scenes/SampleScene.unity
+  assetPath: Assets/UI pack/Prefabs/Bars/Circle Green.prefab
   uploadId: 372817
