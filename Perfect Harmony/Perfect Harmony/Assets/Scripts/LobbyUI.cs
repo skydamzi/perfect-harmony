@@ -98,6 +98,68 @@ public class LobbyUI : MonoBehaviour
         }
     }
 
+    private void SetupUI()
+    {
+        if (createGameButton) createGameButton.onClick.AddListener(CreateGame);
+        if (joinGameButton) joinGameButton.onClick.AddListener(JoinGame);
+        if (startGameButton) startGameButton.onClick.AddListener(OnStartGameClicked);
+        
+        UpdateInviteCodeDisplay();
+    }
+    
+    private void CreateGame()
+    {
+        if (lobbyManager != null)
+        {
+            lobbyManager.CreateGame();
+            UpdateInviteCodeDisplay();
+            
+            if (statusText) statusText.text = "Room created. Waiting for player...";
+            if (inviteCodeDisplay) inviteCodeDisplay.gameObject.SetActive(true);
+            
+            // Host has created a game, disable join/create buttons
+            createGameButton.interactable = false;
+            joinGameButton.interactable = false;
+        }
+    }
+    
+    private void JoinGame()
+    {
+        if (lobbyManager == null || inviteCodeInput == null || string.IsNullOrEmpty(inviteCodeInput.text))
+        {
+            if (statusText) statusText.text = "Please enter Host IP and Port!";
+            return;
+        }
+
+        string inputText = inviteCodeInput.text.Trim();
+        string[] parts = inputText.Split(':');
+        
+        string ip = parts[0];
+        int port = 8080; // Default port
+
+        if (parts.Length > 1)
+        {
+            if (!int.TryParse(parts[1], out port))
+            {
+                if (statusText) statusText.text = "Invalid Port number!";
+                return;
+            }
+        }
+
+        if (string.IsNullOrEmpty(ip))
+        {
+            if (statusText) statusText.text = "IP address cannot be empty!";
+            return;
+        }
+
+        lobbyManager.JoinGame(ip, port);
+        if (statusText) statusText.text = $"Joining game at {ip}:{port}...";
+
+        // Disable buttons after attempting to join
+        createGameButton.interactable = false;
+        joinGameButton.interactable = false;
+    }
+
     private void OnStartGameClicked()
     {
         if (mpManager == null) return;
