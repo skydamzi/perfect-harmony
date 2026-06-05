@@ -16,6 +16,7 @@ public class MultiplayerManager : MonoBehaviour
 
     [Header("Game State")]
     public bool gameStarted = false;
+    private bool pendingSceneLoad = false; // Added for thread-safe scene loading
 
     public bool IsAuthority
     {
@@ -99,6 +100,18 @@ public class MultiplayerManager : MonoBehaviour
         if (!connectedPlayers.ContainsKey(localPlayerId))
         {
             connectedPlayers.Add(localPlayerId, new PlayerData(localPlayerId, "Player_Local"));
+        }
+    }
+
+    private void Update()
+    {
+        // Safety: Trigger scene load from the main thread
+        if (pendingSceneLoad)
+        {
+            pendingSceneLoad = false;
+            gameStarted = true;
+            Debug.Log("Executing pending scene load: Playing");
+            SceneManager.LoadScene("Playing");
         }
     }
 
@@ -266,9 +279,10 @@ public class MultiplayerManager : MonoBehaviour
     // Handle game start command from the central server
     private void HandleGameStart(MessagePacket packet)
     {
-        Debug.Log($"Received GameStart from server for room {currentRoomId}. Loading 'Playing' scene.");
-        gameStarted = true;
-        SceneManager.LoadSceneAsync("Playing");
+        if (gameStarted || pendingSceneLoad) return;
+
+        Debug.Log($"Received GameStart from server for room {currentRoomId}. Scheduling scene load.");
+        pendingSceneLoad = true;
     }
 
     // Handle game stop command
@@ -352,6 +366,10 @@ public class MultiplayerManager : MonoBehaviour
         // In central server mode, we request the server to start the game
         MessagePacket packet = new MessagePacket(PacketType.GameStart, localPlayerId, currentRoomId, null);
         udpManager.SendPacket(packet);
+        
+        Debug.Log("Sent GameStart request to server. Triggering local start.");
+        // Host (sender) should also start their own scene transition
+        HandleGameStart(packet);
     }
 
     public bool HasRequiredPlayers()
