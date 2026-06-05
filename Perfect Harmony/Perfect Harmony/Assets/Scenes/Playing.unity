@@ -476,7 +476,7 @@ AudioSource:
   serializedVersion: 4
   OutputAudioMixerGroup: {fileID: 0}
   m_audioClip: {fileID: 0}
-  m_Resource: {fileID: 8300000, guid: 94cbadd79a0c1294aa26a917d21e3910, type: 3}
+  m_Resource: {fileID: 8300000, guid: 35f75b3f74e58ef44b753a9f55ea6b58, type: 3}
   m_PlayOnAwake: 0
   m_Volume: 1
   m_Pitch: 1
@@ -1159,7 +1159,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 0.70980394}
+  m_Color: {r: 0.9978581, g: 1, b: 0.41037738, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -3259,12 +3259,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5ea10f107e0efed4389a8e83d344d95f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  url: http://127.0.0.1:8000/generate-chart
+  useInspectorSelection: 1
+  testInstrument: 2
+  url: http://116.127.190.78:8000/generate-chart
   targetAudioClip: {fileID: 0}
   loadingPanel: {fileID: 0}
   panelContent: {fileID: 1659826167}
   statusText: {fileID: 1066537001}
   loadingSpinner: {fileID: 335144135}
+  instrumentSelectPanel: {fileID: 0}
+  drumButton: {fileID: 0}
+  bassButton: {fileID: 0}
+  pianoButton: {fileID: 0}
 --- !u!4 &1335009701
 Transform:
   m_ObjectHideFlags: 0
@@ -3710,7 +3716,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 0.74509805}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1

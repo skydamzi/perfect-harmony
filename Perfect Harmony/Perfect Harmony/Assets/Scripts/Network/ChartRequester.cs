@@ -1,35 +1,67 @@
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.UI;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 
-[System.Serializable]
+// 서버 JSON 포맷 매핑 구조
+[Serializable]
+public class InstrumentTracks
+{
+    public List<SpawnEvent> drums;
+    public List<SpawnEvent> bass;
+    public List<SpawnEvent> piano;
+}
+
+[Serializable]
 public class ServerResponse
 {
     public float beatsPerMinute;
-    public List<SpawnEvent> chartData;
+    public InstrumentTracks tracks;
 }
 
 public class ChartRequester : MonoBehaviour
 {
-    public string url = "http://127.0.0.1:8000/generate-chart";
+    // 형이 인스펙터에서 딸깍 선택할 수 있는 열거형 정의
+    public enum SelectedInstrument { Drums, Bass, Piano }
+
+    [Header("[ 개발자 전용 에디터 설정 ]")]
+    [Tooltip("인게임 버튼 안 누르고 인스펙터에서 고른 악기로 바로 시작하려면 체크!")]
+    public bool useInspectorSelection = false;
+    public SelectedInstrument testInstrument = SelectedInstrument.Drums; // 인스펙터 노출 변수
+
+    [Header("[ 기존 서버 설정 ]")]
+    public string url = "http://116.127.190.78:8000/generate-chart";
     public AudioClip targetAudioClip;
 
     [Header("UI 연출 관련")]
     public GameObject loadingPanel;
     public RectTransform panelContent;
     public Text statusText;
-    public RectTransform loadingSpinner; // 빙글빙글 돌릴 이미지 (RectTransform)
+    public RectTransform loadingSpinner;
 
-    private bool isAnalyzing = false; // 회전 제어용 플래그
+    [Header("[악기 선택 UI - 인게임용]")]
+    public GameObject instrumentSelectPanel;
+    public Button drumButton;
+    public Button bassButton;
+    public Button pianoButton;
+
+    private bool isAnalyzing = false;
+    private ServerResponse fullServerData;
 
     void Start()
     {
         if (panelContent != null) panelContent.localScale = Vector3.zero;
         if (loadingPanel != null) loadingPanel.SetActive(false);
+        if (instrumentSelectPanel != null) instrumentSelectPanel.SetActive(false);
 
-        string path = System.IO.Path.Combine(Application.streamingAssetsPath, "song.wav");
+        // 인게임 버튼 리스너 연결
+        if (drumButton != null) drumButton.onClick.AddListener(() => OnSelectInstrument("Drums"));
+        if (bassButton != null) bassButton.onClick.AddListener(() => OnSelectInstrument("Bass"));
+        if (pianoButton != null) pianoButton.onClick.AddListener(() => OnSelectInstrument("Piano"));
+
+        string path = System.IO.Path.Combine(Application.streamingAssetsPath, "song.mp3");
         if (System.IO.File.Exists(path))
         {
             StartCoroutine(AnalyzeAndPlay(path, targetAudioClip));
@@ -42,14 +74,12 @@ public class ChartRequester : MonoBehaviour
 
     IEnumerator AnalyzeAndPlay(string path, AudioClip clip)
     {
-        // --- 1. 패널 등장 ---
         if (loadingPanel != null) loadingPanel.SetActive(true);
         if (statusText != null) statusText.text = "서버 연결 중...";
         yield return StartCoroutine(ScaleRoutine(Vector3.zero, Vector3.one, 0.4f));
 
-        // --- 2. 회전 시작 ---
         isAnalyzing = true;
-        StartCoroutine(RotateSpinner()); // 별도 코루틴으로 회전 시작
+        StartCoroutine(RotateSpinner());
 
         byte[] audioData = System.IO.File.ReadAllBytes(path);
         WWWForm form = new WWWForm();
@@ -57,54 +87,90 @@ public class ChartRequester : MonoBehaviour
 
         using (UnityWebRequest www = UnityWebRequest.Post(url, form))
         {
-            if (statusText != null) statusText.text = "AI 채보 분석 중...";
+            if (statusText != null) statusText.text = "AI 채보 분석 중...\n(CPU 구동으로 약 1분 소요)";
             yield return www.SendWebRequest();
 
             if (www.result == UnityWebRequest.Result.Success)
             {
                 if (statusText != null) statusText.text = "분석 완료!";
-                isAnalyzing = false; // 회전 멈춤
+                isAnalyzing = false;
 
-                ServerResponse res = JsonUtility.FromJson<ServerResponse>(www.downloadHandler.text);
+                fullServerData = JsonUtility.FromJson<ServerResponse>(www.downloadHandler.text);
 
-                SongData aiSong = ScriptableObject.CreateInstance<SongData>();
-                aiSong.songTitle = "AI Generated Chart";
-                aiSong.beatsPerMinute = res.beatsPerMinute;
-                aiSong.audioClip = clip;
-                aiSong.chartData = res.chartData;
-                aiSong.noteSpeed = 2.0f;
-
-                RhythmGameManager.Instance.LoadSong(aiSong);
-
-                yield return new WaitForSeconds(0.5f);
-
-                // --- 3. 패널 퇴장 (축소) ---
-                yield return StartCoroutine(ScaleRoutine(Vector3.one, Vector3.zero, 0.3f));
-                if (loadingPanel != null) loadingPanel.SetActive(false);
-
-                GameStarter starter = FindFirstObjectByType<GameStarter>();
-                if (starter != null) starter.StartGameAfterAnalysis();
-                else RhythmGameManager.Instance.StartCountdown();
+                // ★ 변경 포인트: 인스펙터 우선 모드가 켜져 있으면 UI 안 띄우고 바로 다이렉트 패스!
+                if (useInspectorSelection)
+                {
+                    Debug.Log($"[에디터 테스트] 인스펙터에 설정된 {testInstrument} 트랙으로 즉시 시작합니다.");
+                    OnSelectInstrument(testInstrument.ToString());
+                }
+                else
+                {
+                    // 꺼져있으면 평소대로 유저한테 인게임 버튼 팝업 띄움
+                    if (loadingSpinner != null) loadingSpinner.gameObject.SetActive(false);
+                    if (instrumentSelectPanel != null) instrumentSelectPanel.SetActive(true);
+                }
             }
             else
             {
                 if (statusText != null) statusText.text = "분석 실패ㅠ";
                 isAnalyzing = false;
-                Debug.LogError("서버 연결 실패: " + www.error);
+                Debug.LogError("서ver 연결 실패: " + www.error);
                 yield return new WaitForSeconds(1f);
                 if (loadingPanel != null) loadingPanel.SetActive(false);
             }
         }
     }
 
-    // 스피너 돌리는 코루틴
+    public void OnSelectInstrument(string instrumentType)
+    {
+        if (fullServerData == null) return;
+
+        List<SpawnEvent> selectedChartData = null;
+
+        switch (instrumentType)
+        {
+            case "Drums":
+                selectedChartData = fullServerData.tracks.drums;
+                break;
+            case "Bass":
+                selectedChartData = fullServerData.tracks.bass;
+                break;
+            case "Piano":
+                selectedChartData = fullServerData.tracks.piano;
+                break;
+        }
+
+        SongData aiSong = ScriptableObject.CreateInstance<SongData>();
+        aiSong.songTitle = $"AI Generated Chart ({instrumentType})";
+        aiSong.beatsPerMinute = fullServerData.beatsPerMinute;
+        aiSong.audioClip = targetAudioClip;
+        aiSong.chartData = selectedChartData;
+        aiSong.noteSpeed = 2.0f;
+
+        RhythmGameManager.Instance.LoadSong(aiSong);
+        StartCoroutine(FinishAndStartGame());
+    }
+
+    private IEnumerator FinishAndStartGame()
+    {
+        if (instrumentSelectPanel != null) instrumentSelectPanel.SetActive(false);
+        yield return new WaitForSeconds(0.2f);
+
+        yield return StartCoroutine(ScaleRoutine(Vector3.one, Vector3.zero, 0.3f));
+        if (loadingPanel != null) loadingPanel.SetActive(false);
+
+        GameStarter starter = FindFirstObjectByType<GameStarter>();
+        if (starter != null) starter.StartGameAfterAnalysis();
+        else RhythmGameManager.Instance.StartCountdown();
+    }
+
     IEnumerator RotateSpinner()
     {
         if (loadingSpinner == null) yield break;
+        loadingSpinner.gameObject.SetActive(true);
 
         while (isAnalyzing)
         {
-            // -360도로 돌려야 시계 방향으로 돈다. 속도 조절은 뒤에 곱하는 숫자(200f)로 해라.
             loadingSpinner.Rotate(0, 0, -200f * Time.deltaTime);
             yield return null;
         }
