@@ -13,14 +13,14 @@ public class UDPManager : MonoBehaviour
     private Thread receiveThread;
     private bool isRunning = false;
 
-    // Struct to hold packet and sender info
+    // Struct to hold raw byte data and sender info
     private struct PacketInfo
     {
-        public MessagePacket packet;
+        public byte[] rawData;
         public IPEndPoint sender;
     }
 
-    // Queue to store packets received from the background thread
+    // Queue to store raw bytes received from the background thread
     private Queue<PacketInfo> packetQueue = new Queue<PacketInfo>();
     private object queueLock = new object();
 
@@ -46,7 +46,6 @@ public class UDPManager : MonoBehaviour
 
     private void Start()
     {
-        // For central server architecture, we always act as a client
         StartClient();
     }
 
@@ -58,22 +57,39 @@ public class UDPManager : MonoBehaviour
             while (packetQueue.Count > 0)
             {
                 PacketInfo info = packetQueue.Dequeue();
-                if (OnPacketReceived != null)
+                
+                try
                 {
-                    try
+                    // 1. Convert bytes to string
+                    string json = System.Text.Encoding.UTF8.GetString(info.rawData);
+                    
+                    // 2. Clean the string (Fix for "document root must not follow by other values")
+                    // Remove null terminators and trim whitespace
+                    json = json.Replace("\0", "").Trim();
+
+                    if (string.IsNullOrEmpty(json)) continue;
+
+                    // 3. Parse JSON safely on the main thread
+                    MessagePacket packet = JsonUtility.FromJson<MessagePacket>(json);
+                    
+                    if (packet != null && OnPacketReceived != null)
                     {
-                        OnPacketReceived(info.packet, info.sender);
+                        if (packet.type != PacketType.Ping)
+                            Debug.Log($"[UDP] Received {packet.type} from {info.sender}");
+
+                        OnPacketReceived(packet, info.sender);
                     }
-                    catch (Exception e)
-                    {
-                        Debug.LogError($"Error processing packet: {e}");
-                    }
+                }
+                catch (Exception e)
+                {
+                    // Log fail data for diagnosis
+                    string rawStr = System.Text.Encoding.UTF8.GetString(info.rawData);
+                    Debug.LogError($"[UDP] JSON Parse Error: {e.Message}\nRaw JSON: {rawStr}");
                 }
             }
         }
     }
 
-    // Initialize and start server (Keep for potential local debugging, but not used in production)
     public void InitializeServer()
     {
         StopConnection();
@@ -81,7 +97,6 @@ public class UDPManager : MonoBehaviour
         StartServer();
     }
 
-    // Initialize and start client with specific IP
     public void InitializeClient(string ip)
     {
         StopConnection();
@@ -90,7 +105,6 @@ public class UDPManager : MonoBehaviour
         StartClient();
     }
 
-    // Initialize and start client with specific IP and port
     public void InitializeClient(string ip, int newPort)
     {
         StopConnection();
@@ -100,14 +114,11 @@ public class UDPManager : MonoBehaviour
         StartClient();
     }
 
-    // Start the UDP server
     private void StartServer()
     {
         try
         {
             udpClient = new UdpClient(port);
-            
-            // Fix for Windows UDP SIO_UDP_CONNRESET (10054 error)
             if (Application.platform == RuntimePlatform.WindowsEditor || Application.platform == RuntimePlatform.WindowsPlayer)
             {
                 const int SIO_UDP_CONNRESET = -1744830452;
@@ -118,7 +129,7 @@ public class UDPManager : MonoBehaviour
             receiveThread = new Thread(new ThreadStart(ReceiveLoop));
             receiveThread.IsBackground = true;
             receiveThread.Start();
-            Debug.Log($"UDP Local Server started on port {port} (For Debugging)");
+            Debug.Log($"UDP Local Server started on port {port}");
         }
         catch (Exception e)
         {
@@ -126,14 +137,11 @@ public class UDPManager : MonoBehaviour
         }
     }
 
-    // Start the UDP client
     private void StartClient()
     {
         try
         {
             udpClient = new UdpClient();
-            
-            // Fix for Windows UDP SIO_UDP_CONNRESET (10054 error)
             if (Application.platform == RuntimePlatform.WindowsEditor || Application.platform == RuntimePlatform.WindowsPlayer)
             {
                 const int SIO_UDP_CONNRESET = -1744830452;
@@ -147,7 +155,6 @@ public class UDPManager : MonoBehaviour
             receiveThread.Start();
             Debug.Log($"UDP Client connected to Central Server: {serverIP}:{port}");
             
-            // Send connection packet to central server
             string currentRoomId = (MultiplayerManager.Instance != null) ? MultiplayerManager.Instance.currentRoomId : "";
             SendPacket(new MessagePacket(PacketType.Connect, GetPlayerId(), currentRoomId, null));
         }
@@ -157,7 +164,6 @@ public class UDPManager : MonoBehaviour
         }
     }
 
-    // Main receive loop
     private void ReceiveLoop()
     {
         while (isRunning)
@@ -167,47 +173,27 @@ public class UDPManager : MonoBehaviour
                 IPEndPoint remoteEP = new IPEndPoint(IPAddress.Any, 0);
                 byte[] data = udpClient.Receive(ref remoteEP);
                 
-                if (data.Length > 0)
+                if (data != null && data.Length > 0)
                 {
-                    string json = System.Text.Encoding.UTF8.GetString(data);
-                    // Debug.Log($"[UDP] Raw: {json}"); // Enable if needed
-                    MessagePacket packet = JsonUtility.FromJson<MessagePacket>(json);
-                    
-                    if (packet.type != PacketType.Ping)
-                        Debug.Log($"[UDP] Received {packet.type} from {remoteEP}");
-
-                    // Enqueue the packet safely to be processed on the main thread
+                    // Enqueue raw bytes to be parsed on the Main Thread
                     lock (queueLock)
                     {
-                        packetQueue.Enqueue(new PacketInfo { packet = packet, sender = remoteEP });
+                        packetQueue.Enqueue(new PacketInfo { rawData = data, sender = remoteEP });
                     }
                 }
             }
             catch (SocketException se)
             {
-                // Ignore ConnectionReset (10054) which happens when a previous send failed to reach destination
-                if (se.SocketErrorCode == SocketError.ConnectionReset)
-                {
-                    // Debug.LogWarning("UDP Connection Reset (10054) - Remote host closed connection. Ignoring.");
-                    continue; 
-                }
-                
-                if (isRunning)
-                {
-                    Debug.LogError($"Socket Error receiving UDP packet: {se.Message} ({se.SocketErrorCode})");
-                }
+                if (se.SocketErrorCode == SocketError.ConnectionReset) continue; 
+                if (isRunning) Debug.LogError($"Socket Error: {se.Message}");
             }
             catch (Exception e)
             {
-                if (isRunning) // Only log error if we're still supposed to be running
-                {
-                    Debug.LogError($"Error receiving UDP packet: {e.Message}");
-                }
+                if (isRunning) Debug.LogError($"Error receiving UDP packet: {e.Message}");
             }
         }
     }
 
-    // Send a packet (Client -> Server, or Server -> Connected Client if connected)
     public void SendPacket(MessagePacket packet)
     {
         if (udpClient != null)
@@ -224,28 +210,15 @@ public class UDPManager : MonoBehaviour
         }
     }
 
-    // Send a packet to a specific endpoint (Server -> Specific Client)
     public void SendPacketTo(MessagePacket packet, IPEndPoint endpoint)
     {
         if (udpClient != null)
         {
             try
             {
-                if (packet.type != PacketType.Ping)
-                    Debug.Log($"Sending {packet.type} to {endpoint.Address}:{endpoint.Port}");
-                
                 byte[] bytes = System.Text.Encoding.UTF8.GetBytes(JsonUtility.ToJson(packet));
-                
-                if (isServer)
-                {
-                    // Server must specify endpoint
-                    udpClient.Send(bytes, bytes.Length, endpoint);
-                }
-                else
-                {
-                    // Client is connected, cannot specify endpoint (it goes to the connected server)
-                    udpClient.Send(bytes, bytes.Length);
-                }
+                if (isServer) udpClient.Send(bytes, bytes.Length, endpoint);
+                else udpClient.Send(bytes, bytes.Length);
             }
             catch (Exception e)
             {
@@ -254,35 +227,28 @@ public class UDPManager : MonoBehaviour
         }
     }
 
-    // Get a unique player ID
     private string GetPlayerId()
     {
         if (MultiplayerManager.Instance != null && !string.IsNullOrEmpty(MultiplayerManager.Instance.localPlayerId))
         {
             return MultiplayerManager.Instance.localPlayerId;
         }
-        // Fallback with random for local testing
         return SystemInfo.deviceUniqueIdentifier + "_" + UnityEngine.Random.Range(0, 10000);
     }
 
-    // Stop the UDP connection
     public void StopConnection()
     {
         isRunning = false;
-        
         if (receiveThread != null && receiveThread.IsAlive)
         {
             receiveThread.Abort(); 
             receiveThread = null;
         }
-        
         if (udpClient != null)
         {
             udpClient.Close();
             udpClient = null;
         }
-        
-        Debug.Log("UDP connection stopped");
     }
 
     private void OnApplicationQuit()
