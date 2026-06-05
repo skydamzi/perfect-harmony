@@ -190,10 +190,21 @@ public class MultiplayerManager : MonoBehaviour
     // Handle player connection/join
     private void HandlePlayerConnect(MessagePacket packet, System.Net.IPEndPoint sender)
     {
+        if (packet.playerId == localPlayerId) return;
+
         if (!connectedPlayers.ContainsKey(packet.playerId))
         {
             connectedPlayers[packet.playerId] = new PlayerData(packet.playerId, $"Player_{connectedPlayers.Count}");
             Debug.Log($"Player joined room: {packet.playerId}");
+
+            // 만약 내가 이미 이 방에 있던 사람이라면, 새로 들어온 사람에게 내 정보를 알려줘야 함
+            // JoinRoom 패킷을 받았을 때만 응답 (무한 루프 방지 위해 Connect 타입으로 응답)
+            if (packet.type == PacketType.JoinRoom)
+            {
+                MessagePacket replyPacket = new MessagePacket(PacketType.Connect, localPlayerId, currentRoomId, null);
+                udpManager.SendPacket(replyPacket);
+                Debug.Log($"Sent discovery reply to new player: {packet.playerId}");
+            }
         }
     }
 
