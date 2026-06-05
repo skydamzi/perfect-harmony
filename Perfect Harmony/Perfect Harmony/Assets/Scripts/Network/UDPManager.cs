@@ -25,9 +25,9 @@ public class UDPManager : MonoBehaviour
     private object queueLock = new object();
 
     [Header("Network Settings")]
-    public string serverIP = "127.0.0.1"; // Default to localhost
+    public string serverIP = "116.127.190.78"; // External Central Server IP
     public int port = 8080;
-    public bool isServer = false;
+    public bool isServer = false; // Always false for central server clients
 
     public Action<MessagePacket, IPEndPoint> OnPacketReceived;
 
@@ -46,14 +46,8 @@ public class UDPManager : MonoBehaviour
 
     private void Start()
     {
-        if (isServer)
-        {
-            StartServer();
-        }
-        else
-        {
-            StartClient();
-        }
+        // For central server architecture, we always act as a client
+        StartClient();
     }
 
     private void Update()
@@ -79,7 +73,7 @@ public class UDPManager : MonoBehaviour
         }
     }
 
-    // Initialize and start server
+    // Initialize and start server (Keep for potential local debugging, but not used in production)
     public void InitializeServer()
     {
         StopConnection();
@@ -124,7 +118,7 @@ public class UDPManager : MonoBehaviour
             receiveThread = new Thread(new ThreadStart(ReceiveLoop));
             receiveThread.IsBackground = true;
             receiveThread.Start();
-            Debug.Log($"UDP Server started on port {port}");
+            Debug.Log($"UDP Local Server started on port {port} (For Debugging)");
         }
         catch (Exception e)
         {
@@ -146,19 +140,16 @@ public class UDPManager : MonoBehaviour
                 try { udpClient.Client.IOControl(SIO_UDP_CONNRESET, new byte[] { 0 }, null); } catch {}
             }
 
-            // Bind to any available port, not just an ephemeral one, to ensure we can receive replies
-            // But for clients, typically we don't bind to a specific port unless necessary.
-            // However, udpClient.Connect() implicitly binds.
-            
             udpClient.Connect(serverIP, port);
             isRunning = true;
             receiveThread = new Thread(new ThreadStart(ReceiveLoop));
             receiveThread.IsBackground = true;
             receiveThread.Start();
-            Debug.Log($"UDP Client connected to {serverIP}:{port}");
+            Debug.Log($"UDP Client connected to Central Server: {serverIP}:{port}");
             
-            // Send connection packet to server
-            SendPacket(new MessagePacket(PacketType.Connect, GetPlayerId(), null));
+            // Send connection packet to central server
+            string currentRoomId = (MultiplayerManager.Instance != null) ? MultiplayerManager.Instance.currentRoomId : "";
+            SendPacket(new MessagePacket(PacketType.Connect, GetPlayerId(), currentRoomId, null));
         }
         catch (Exception e)
         {

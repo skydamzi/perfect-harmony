@@ -208,9 +208,9 @@ public class MultiplayerUIManager : MonoBehaviour
     // Called when start game button is clicked
     private void OnStartGameClicked()
     {
-        if (mpManager != null && mpManager.isHost && mpManager.HasRequiredPlayers())
+        if (mpManager != null && mpManager.IsAuthority && mpManager.HasRequiredPlayers())
         {
-            mpManager.SendGameStart();
+            mpManager.SendGameStartRequest();
         }
     }
 

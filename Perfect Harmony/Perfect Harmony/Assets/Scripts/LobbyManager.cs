@@ -27,19 +27,19 @@ public class LobbyManager : MonoBehaviour
     public void CreateGame()
     {
         currentInviteCode = GetLocalIPAddress();
-        Debug.Log("게임 방 생성됨. 호스트 IP: " + currentInviteCode);
+        Debug.Log("게임 방 생성 요청. 방 ID (IP): " + currentInviteCode);
         
         // 멀티플레이어 설정
         MultiplayerSetup setup = GetComponent<MultiplayerSetup>();
         if (setup != null)
         {
-            setup.SetAsHost();
+            setup.JoinRoom(currentInviteCode);
         }
         else
         {
             GameObject setupObj = new GameObject("MultiplayerSetup");
             setup = setupObj.AddComponent<MultiplayerSetup>();
-            setup.SetAsHost();
+            setup.JoinRoom(currentInviteCode);
         }
         
         // 게임 시작을 기다리는 상태로 설정
@@ -50,27 +50,27 @@ public class LobbyManager : MonoBehaviour
     }
     
     // 클라이언트(초대 받은 사람)로 연결
-    public void JoinGame(string ip, int port)
+    public void JoinGame(string roomId, int port)
     {
-        if (string.IsNullOrEmpty(ip))
+        if (string.IsNullOrEmpty(roomId))
         {
-            Debug.LogError("IP 주소가 없습니다!");
+            Debug.LogError("방 ID가 없습니다!");
             return;
         }
         
-        Debug.Log($"{ip}:{port} 주소로 게임에 참가 시도 중...");
+        Debug.Log($"{roomId} 방에 참가 시도 중...");
         
         // 멀티플레이어 설정
         MultiplayerSetup setup = GetComponent<MultiplayerSetup>();
         if (setup != null)
         {
-            setup.SetAsClient(ip, port); // 입력된 IP 주소와 포트 사용
+            setup.JoinRoom(roomId);
         }
         else
         {
             GameObject setupObj = new GameObject("MultiplayerSetup");
             setup = setupObj.AddComponent<MultiplayerSetup>();
-            setup.SetAsClient(ip, port);
+            setup.JoinRoom(roomId);
         }
     }
     

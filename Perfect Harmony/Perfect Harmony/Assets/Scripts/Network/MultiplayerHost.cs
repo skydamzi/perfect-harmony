@@ -30,166 +30,66 @@ public class MultiplayerHost : MonoBehaviour
             }
         }
         
-        multiplayerManager.isHost = true;
+        // MultiplayerHost is legacy in central server architecture
+        Debug.Log("MultiplayerHost (Legacy) initialized. In central server mode, this component is dormant.");
         
-        // Subscribe to UDP manager events
+        // Subscribe to UDP manager events (optional, for local debugging)
         if (UDPManager.Instance != null)
         {
-            UDPManager.Instance.OnPacketReceived += HandlePacketReceived;
+            // UDPManager.Instance.OnPacketReceived += HandlePacketReceived;
         }
 
-        StartCoroutine(HeartbeatRoutine());
+        // Heartbeat not needed for clients in central server mode
+        // StartCoroutine(HeartbeatRoutine());
     }
 
     private System.Collections.IEnumerator HeartbeatRoutine()
     {
-        while (true)
-        {
-            yield return new WaitForSeconds(1.0f);
-            if (clientEndpoints.Count > 0)
-            {
-                MessagePacket pingPacket = new MessagePacket(PacketType.Ping, multiplayerManager.localPlayerId, null);
-                BroadcastToAll(pingPacket);
-            }
-        }
+        yield break;
     }
 
     private void OnDestroy()
     {
         if (UDPManager.Instance != null)
         {
-            UDPManager.Instance.OnPacketReceived -= HandlePacketReceived;
+            // UDPManager.Instance.OnPacketReceived -= HandlePacketReceived;
         }
     }
 
     // Handle packets received by UDPManager
     private void HandlePacketReceived(MessagePacket packet, IPEndPoint senderEndpoint)
     {
-        // Only process if we are the host
-        if (!multiplayerManager.isHost) return;
-
-        // Store client endpoint if it's a new connection
-        if (!clientEndpoints.ContainsKey(packet.playerId))
-        {
-            clientEndpoints[packet.playerId] = senderEndpoint;
-            Debug.Log($"New client connected: {packet.playerId} at {senderEndpoint}");
-        }
-        else
-        {
-            // Update endpoint just in case (e.g. port change)
-            clientEndpoints[packet.playerId] = senderEndpoint;
-        }
-        
-        // Process the packet
-        ProcessServerPacket(packet, senderEndpoint);
+        // Legacy: Central server handles relaying now.
     }
 
     // Process packets on the server side
     private void ProcessServerPacket(MessagePacket packet, IPEndPoint senderEndpoint)
     {
-        switch (packet.type)
-        {
-            case PacketType.Connect:
-                // Acknowledge connection to the sender so they know they are connected
-                UDPManager.Instance.SendPacketTo(packet, senderEndpoint);
-                
-                // Notify other players about the new connection
-                BroadcastToAllExcept(packet, packet.playerId);
-                break;
-
-            case PacketType.PlayerReady:
-                 // Relay ready status to all other players
-                 BroadcastToAllExcept(packet, packet.playerId);
-                 break;
-            
-            case PacketType.Ping:
-                // Reply to the sender
-                UDPManager.Instance.SendPacketTo(packet, senderEndpoint);
-                break;
-                
-            case PacketType.PlayerInput:
-                // Relay player input to all other players
-                BroadcastToAllExcept(packet, packet.playerId);
-                break;
-                
-            case PacketType.PlayerScore:
-                // Relay score update to all players
-                BroadcastToAll(packet);
-                break;
-                
-            case PacketType.NoteHit:
-            case PacketType.NoteMiss:
-                // Relay note result to all players
-                BroadcastToAllExcept(packet, packet.playerId);
-                break;
-                
-            case PacketType.Disconnect:
-                // Handle disconnection
-                if (clientEndpoints.ContainsKey(packet.playerId))
-                {
-                    clientEndpoints.Remove(packet.playerId);
-                }
-                BroadcastToAll(packet);
-                break;
-                
-            default:
-                // Relay other packets to all players
-                BroadcastToAllExcept(packet, packet.playerId);
-                break;
-        }
+        // Legacy: Central server handles relaying now.
     }
 
-    // Broadcast message to all connected clients
+    // Broadcast message - Redirected to central server
     public void BroadcastToAll(MessagePacket packet)
     {
-        if (packet.type != PacketType.Ping) 
-            Debug.Log($"Broadcasting packet {packet.type} to {clientEndpoints.Count} clients.");
-        
-        // Special handling for GameStart to ensure delivery via redundancy
-        if (packet.type == PacketType.GameStart)
+        if (UDPManager.Instance != null)
         {
-            StartCoroutine(BroadcastGameStartRoutine(packet));
-        }
-        else
-        {
-            foreach (var kvp in clientEndpoints)
-            {
-                UDPManager.Instance.SendPacketTo(packet, kvp.Value);
-            }
+            packet.roomId = multiplayerManager.currentRoomId;
+            UDPManager.Instance.SendPacket(packet);
         }
     }
 
     private System.Collections.IEnumerator BroadcastGameStartRoutine(MessagePacket packet)
     {
-        Debug.Log($"Starting GameStart broadcast routine. Target clients: {clientEndpoints.Count}");
-        
-        // Create a safe copy of endpoints to iterate over multiple frames
-        List<IPEndPoint> targets = new List<IPEndPoint>(clientEndpoints.Values);
-
-        for (int i = 0; i < 5; i++)
-        {
-            foreach (var target in targets)
-            {
-                if (UDPManager.Instance != null)
-                {
-                    // Debug.Log($"Sending GameStart to {target} (Attempt {i+1}/5)");
-                    UDPManager.Instance.SendPacketTo(packet, target);
-                }
-            }
-            yield return new WaitForSeconds(0.1f);
-        }
-        Debug.Log("Finished GameStart broadcast routine.");
+        yield break;
     }
 
-    // Broadcast message to all except one client
+    // Broadcast message except one client - Redirected to central server
     public void BroadcastToAllExcept(MessagePacket packet, string excludedClientId)
     {
-        foreach (var kvp in clientEndpoints)
+        if (UDPManager.Instance != null)
         {
-            if (kvp.Key != excludedClientId)
-            {
-                UDPManager.Instance.SendPacketTo(packet, kvp.Value);
-            }
+            packet.roomId = multiplayerManager.currentRoomId;
+            UDPManager.Instance.SendPacket(packet);
         }
     }
 

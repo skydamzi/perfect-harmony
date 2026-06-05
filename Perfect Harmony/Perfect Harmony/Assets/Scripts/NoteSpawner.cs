@@ -75,7 +75,7 @@ public class NoteSpawner : MonoBehaviour
         // 멀티플레이어 동기화 로직
         MultiplayerManager mpManager = FindFirstObjectByType<MultiplayerManager>();
         GameStateSyncManager gameStateSyncManager = FindFirstObjectByType<GameStateSyncManager>();
-        if (mpManager != null && mpManager.isHost && mpManager.gameStarted)
+        if (mpManager != null && mpManager.IsAuthority && mpManager.gameStarted)
         {
             if (gameStateSyncManager != null)
             {

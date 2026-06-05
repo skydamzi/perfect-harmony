@@ -5,6 +5,10 @@ public enum PacketType
     Disconnect,
     Ping,
     
+    // Room management (Central Server)
+    JoinRoom,
+    LeaveRoom,
+    
     // Game state related
     GameStart,
     GameStop,

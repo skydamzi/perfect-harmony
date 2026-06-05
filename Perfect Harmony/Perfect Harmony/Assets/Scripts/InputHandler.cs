@@ -52,7 +52,7 @@ public class InputHandler : MonoBehaviour
 
                 if (mpManager != null && mpManager.gameStarted)
                 {
-                    if (!mpManager.isHost) targetLaneIndex = i + 4;
+                    if (mpManager.GetPlayerSlot() != 0) targetLaneIndex = i + 4;
                     if (mpInputHandler == null) mpInputHandler = FindFirstObjectByType<MultiplayerInputHandler>();
                     if (mpInputHandler != null) mpInputHandler.ProcessLocalInput(i);
                     ProcessLaneInput((NoteLane)targetLaneIndex);
@@ -104,7 +104,7 @@ public class InputHandler : MonoBehaviour
         return closestNote;
     }
 
-    // --- ¸®½ºÆ® °ü¸® ¹× ¸ÖÆ¼¿ë ÇÔ¼öµé ---
+    // --- ï¿½ï¿½ï¿½ï¿½Æ® ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½Æ¼ï¿½ï¿½ ï¿½Ô¼ï¿½ï¿½ï¿½ ---
 
     public void AddNoteToLane(FallingNote note, NoteLane lane)
     {
@@ -131,7 +131,7 @@ public class InputHandler : MonoBehaviour
             activeNotesInLanes[(int)lane].Remove(note);
     }
 
-    // [¿©±â°¡ ¿¡·¯ ÇØ°á Æ÷ÀÎÆ®]
+    // [ï¿½ï¿½ï¿½â°¡ ï¿½ï¿½ï¿½ï¿½ ï¿½Ø°ï¿½ ï¿½ï¿½ï¿½ï¿½Æ®]
     public List<FallingNote> GetActiveNotesInLane(NoteLane lane)
     {
         int index = (int)lane;
