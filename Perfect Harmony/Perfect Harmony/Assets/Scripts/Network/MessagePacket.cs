@@ -44,4 +44,30 @@ public class MessagePacket
     {
         // Dummy object is ignored in flat structure
     }
+
+    // Static helper methods for creating specialized packets
+    public static MessagePacket CreateScorePacket(string playerId, string roomId, int score, int combo, int result)
+    {
+        MessagePacket p = new MessagePacket(PacketType.PlayerScore, playerId, roomId);
+        p.score = score;
+        p.combo = combo;
+        p.timingResult = result;
+        return p;
+    }
+
+    public static MessagePacket CreateHitPacket(string playerId, string roomId, int lane, int result, float hitTime)
+    {
+        MessagePacket p = new MessagePacket(PacketType.NoteHit, playerId, roomId);
+        p.lane = lane;
+        p.timingResult = result;
+        p.hitTime = hitTime;
+        return p;
+    }
+
+    public static MessagePacket CreateSyncStartPacket(string playerId, string roomId, float serverStartTime)
+    {
+        MessagePacket p = new MessagePacket(PacketType.GameStart, playerId, roomId);
+        p.serverTime = serverStartTime;
+        return p;
+    }
 }
