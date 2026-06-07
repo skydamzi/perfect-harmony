@@ -8,9 +8,14 @@ public class TimingSyncManager : MonoBehaviour
     [Header("Timing Sync Settings")]
 <<<<<<< HEAD
     public float syncInterval = 1.0f; 
-    public int minSyncsToStart = 5;    
+    public int minSyncsToStart = 5;    // 최소 5번의 핑이 오가야 동기화 완료로 간주
     public double networkTimeOffset = 0; 
     public float packetExchangeLatency = 0f; 
+
+    [Header("Rhythm Sync")]
+    public float serverSongPosition = 0f;
+    public int serverCurrentBeat = 0;
+    public float serverSongStartTime = 0f;
 
     private List<double> offsetHistory = new List<double>();
     private int syncCount = 0;
@@ -72,11 +77,30 @@ public class TimingSyncManager : MonoBehaviour
 
 <<<<<<< HEAD
         InvokeRepeating("SendPingPacket", 0f, 1.0f);
+<<<<<<< HEAD
 =======
         // Start sync timer
         InvokeRepeating("SendSyncPacket", 0f, syncInterval);
         InvokeRepeating("SendPingPacket", 0.5f, 1.0f);
 >>>>>>> parent of e073e40 (ㅇㄹ)
+=======
+        InvokeRepeating("SendSyncPacket", 0.5f, 2.0f);
+    }
+
+    public void RefreshReferences()
+    {
+        mpManager = FindFirstObjectByType<MultiplayerManager>();
+        rhythmGameManager = FindFirstObjectByType<RhythmGameManager>();
+    }
+
+    private void SendSyncPacket()
+    {
+        if (mpManager == null || mpManager.udpManager == null || mpManager.IsAuthority) return;
+        
+        MessagePacket p = new MessagePacket(PacketType.SyncTime, mpManager.localPlayerId, mpManager.currentRoomId);
+        p.songPosition = rhythmGameManager != null ? rhythmGameManager.songPosition : 0f;
+        mpManager.udpManager.SendPacket(p);
+>>>>>>> parent of 0e571fd (ㅌㅋㅊ)
     }
 
     // Refresh references to scene objects (called by AutoSetup)
@@ -122,7 +146,11 @@ public class TimingSyncManager : MonoBehaviour
             return;
 
 <<<<<<< HEAD
+<<<<<<< HEAD
         // [핵심] 타임스탬프가 있는 모든 패킷으로 즉시 동기화 수행
+=======
+        // 중앙 서버가 찍어준 relayTimestamp가 있으면 무조건 시각 동기화 수행
+>>>>>>> parent of 0e571fd (ㅌㅋㅊ)
         if (p.relayTimestamp > 0)
         {
             ProcessPrecisionSync(p);
@@ -140,6 +168,13 @@ public class TimingSyncManager : MonoBehaviour
                 break;
 >>>>>>> parent of e073e40 (ㅇㄹ)
         }
+
+        if (p.type == PacketType.SyncGameState && !mpManager.IsAuthority)
+        {
+            serverSongPosition = p.songPosition;
+            serverCurrentBeat = p.currentBeat;
+            serverSongStartTime = (float)p.startTime;
+        }
     }
 
     // Process a sync packet from server
@@ -148,14 +183,24 @@ public class TimingSyncManager : MonoBehaviour
 <<<<<<< HEAD
         double localRecvTime = (double)Time.realtimeSinceStartup;
         
+<<<<<<< HEAD
         // RTT 계산 (왕복 시간)
         double rtt = (double)(System.DateTime.UtcNow.Ticks - p.systemTimestamp) / 10000000.0;
         packetExchangeLatency = (float)(rtt * 1000.0);
 
         // NTP 공식 적용: Offset = (ServerTime + RTT/2) - LocalTime
+=======
+        // 1. RTT (왕복 시간) 계산: 현재 시각 - 패킷 생성 시각 (시스템 틱 활용)
+        double rtt = (double)(System.DateTime.UtcNow.Ticks - p.systemTimestamp) / 10000000.0; // Seconds
+        packetExchangeLatency = (float)(rtt * 1000.0); // Milliseconds
+
+        // 2. NTP 공식: Offset = (ServerTime + RTT/2) - LocalRecvTime
+        // 서버가 패킷을 쏜 시점(relayTimestamp)에 RTT의 절반(이동시간)을 더해 현재의 실제 서버 시간을 추정
+>>>>>>> parent of 0e571fd (ㅌㅋㅊ)
         double estimatedServerNow = p.relayTimestamp + (rtt / 2.0);
         double currentOffset = estimatedServerNow - localRecvTime;
 
+        // 3. 필터링: 급격한 변화 방지 (이동 평균)
         offsetHistory.Add(currentOffset);
         if (offsetHistory.Count > 10) offsetHistory.RemoveAt(0);
 
@@ -260,6 +305,7 @@ public class TimingSyncManager : MonoBehaviour
         return networkTimeOffset;
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 
     // Get server's song position (for client-side prediction)
@@ -295,4 +341,11 @@ public class TimingSyncManager : MonoBehaviour
         CancelInvoke("SendSyncPacket");
     }
 >>>>>>> parent of e073e40 (ㅇㄹ)
+=======
+
+    private void OnDestroy()
+    {
+        if (mpManager != null && mpManager.udpManager != null) mpManager.udpManager.OnPacketReceived -= HandlePacket;
+    }
+>>>>>>> parent of 0e571fd (ㅌㅋㅊ)
 }

@@ -104,7 +104,11 @@ public class InputHandler : MonoBehaviour
         return closestNote;
     }
 
+<<<<<<< HEAD
     // --- Ʈ   Ƽ Լ ---
+=======
+    // --- ����Ʈ ���� �� ��Ƽ�� �Լ��� ---
+>>>>>>> parent of 0e571fd (ㅌㅋㅊ)
 
     public void AddNoteToLane(FallingNote note, NoteLane lane)
     {
@@ -131,7 +135,11 @@ public class InputHandler : MonoBehaviour
             activeNotesInLanes[(int)lane].Remove(note);
     }
 
+<<<<<<< HEAD
     // [Ⱑ  ذ Ʈ]
+=======
+    // [���Ⱑ ���� �ذ� ����Ʈ]
+>>>>>>> parent of 0e571fd (ㅌㅋㅊ)
     public List<FallingNote> GetActiveNotesInLane(NoteLane lane)
     {
         int index = (int)lane;
