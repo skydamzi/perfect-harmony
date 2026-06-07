@@ -71,6 +71,7 @@ public class InputHandler : MonoBehaviour
 
         if (closestNote != null)
         {
+            // [수정] 판정 계산 시 songPosition 사용 (realtimeSinceStartup 기반)
             float currentPos = RhythmGameManager.Instance.songPosition;
             float targetPos = RhythmGameManager.Instance.BeatToTime(closestNote.beatNumber);
 
@@ -104,8 +105,6 @@ public class InputHandler : MonoBehaviour
         return closestNote;
     }
 
-    // --- ����Ʈ ���� �� ��Ƽ�� �Լ��� ---
-
     public void AddNoteToLane(FallingNote note, NoteLane lane)
     {
         if ((int)lane < activeNotesInLanes.Length)
@@ -131,7 +130,6 @@ public class InputHandler : MonoBehaviour
             activeNotesInLanes[(int)lane].Remove(note);
     }
 
-    // [���Ⱑ ���� �ذ� ����Ʈ]
     public List<FallingNote> GetActiveNotesInLane(NoteLane lane)
     {
         int index = (int)lane;

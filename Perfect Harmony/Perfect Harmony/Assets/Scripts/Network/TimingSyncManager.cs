@@ -7,14 +7,9 @@ public class TimingSyncManager : MonoBehaviour
 
     [Header("Timing Sync Settings")]
     public float syncInterval = 1.0f; 
-    public int minSyncsToStart = 5;    // 최소 5번의 핑이 오가야 동기화 완료로 간주
+    public int minSyncsToStart = 5;    
     public double networkTimeOffset = 0; 
     public float packetExchangeLatency = 0f; 
-
-    [Header("Rhythm Sync")]
-    public float serverSongPosition = 0f;
-    public int serverCurrentBeat = 0;
-    public float serverSongStartTime = 0f;
 
     private List<double> offsetHistory = new List<double>();
     private int syncCount = 0;
@@ -38,22 +33,6 @@ public class TimingSyncManager : MonoBehaviour
         if (mpManager != null) mpManager.udpManager.OnPacketReceived += HandlePacket;
 
         InvokeRepeating("SendPingPacket", 0f, 1.0f);
-        InvokeRepeating("SendSyncPacket", 0.5f, 2.0f);
-    }
-
-    public void RefreshReferences()
-    {
-        mpManager = FindFirstObjectByType<MultiplayerManager>();
-        rhythmGameManager = FindFirstObjectByType<RhythmGameManager>();
-    }
-
-    private void SendSyncPacket()
-    {
-        if (mpManager == null || mpManager.udpManager == null || mpManager.IsAuthority) return;
-        
-        MessagePacket p = new MessagePacket(PacketType.SyncTime, mpManager.localPlayerId, mpManager.currentRoomId);
-        p.songPosition = rhythmGameManager != null ? rhythmGameManager.songPosition : 0f;
-        mpManager.udpManager.SendPacket(p);
     }
 
     private void SendPingPacket()
@@ -69,17 +48,11 @@ public class TimingSyncManager : MonoBehaviour
     {
         if (!string.IsNullOrEmpty(p.roomId) && p.roomId != mpManager.currentRoomId && p.roomId != "Global") return;
 
-        // 중앙 서버가 찍어준 relayTimestamp가 있으면 무조건 시각 동기화 수행
-        if (p.relayTimestamp > 0)
+        // [핵심 수정] 오직 핑(Ping) 패킷에 담긴 서버 시각으로만 동기화 수행
+        // GameStart처럼 반복 전송되는 패킷에 담긴 타임스탬프는 지연 오차가 발생하므로 무시함
+        if (p.type == PacketType.Ping && p.relayTimestamp > 0)
         {
             ProcessPrecisionSync(p);
-        }
-
-        if (p.type == PacketType.SyncGameState && !mpManager.IsAuthority)
-        {
-            serverSongPosition = p.songPosition;
-            serverCurrentBeat = p.currentBeat;
-            serverSongStartTime = (float)p.startTime;
         }
     }
 
@@ -87,18 +60,16 @@ public class TimingSyncManager : MonoBehaviour
     {
         double localRecvTime = (double)Time.realtimeSinceStartup;
         
-        // 1. RTT (왕복 시간) 계산: 현재 시각 - 패킷 생성 시각 (시스템 틱 활용)
-        double rtt = (double)(System.DateTime.UtcNow.Ticks - p.systemTimestamp) / 10000000.0; // Seconds
-        packetExchangeLatency = (float)(rtt * 1000.0); // Milliseconds
+        // RTT 계산 (시스템 틱 기준)
+        double rtt = (double)(System.DateTime.UtcNow.Ticks - p.systemTimestamp) / 10000000.0;
+        packetExchangeLatency = (float)(rtt * 1000.0);
 
-        // 2. NTP 공식: Offset = (ServerTime + RTT/2) - LocalRecvTime
-        // 서버가 패킷을 쏜 시점(relayTimestamp)에 RTT의 절반(이동시간)을 더해 현재의 실제 서버 시간을 추정
+        // NTP 공식 적용
         double estimatedServerNow = p.relayTimestamp + (rtt / 2.0);
         double currentOffset = estimatedServerNow - localRecvTime;
 
-        // 3. 필터링: 급격한 변화 방지 (이동 평균)
         offsetHistory.Add(currentOffset);
-        if (offsetHistory.Count > 10) offsetHistory.RemoveAt(0);
+        if (offsetHistory.Count > 15) offsetHistory.RemoveAt(0); // 샘플 수 증가 (안정성)
 
         double sum = 0;
         foreach (double o in offsetHistory) sum += o;
@@ -115,10 +86,5 @@ public class TimingSyncManager : MonoBehaviour
     public double GetTimeOffset()
     {
         return networkTimeOffset;
-    }
-
-    private void OnDestroy()
-    {
-        if (mpManager != null && mpManager.udpManager != null) mpManager.udpManager.OnPacketReceived -= HandlePacket;
     }
 }
