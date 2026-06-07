@@ -7,68 +7,61 @@ public class MessagePacket
     public PacketType type;
     public string playerId;
     public string roomId;
-    public float timestamp;
-    public long systemTimestamp; // Added back for precision timing
     
-    // Flattened data fields
-    [Header("Note/Input Data")]
+    // Timing fields
+    public float timestamp;        // Local realtimeSinceStartup of sender
+    public long systemTimestamp;   // Precision UtcTicks of sender
+    public double relayTimestamp;   // Injected by Central Server (absolute reference)
+    public double serverTime;       // Scheduled future time (Network Time)
+    
+    // Gameplay fields (Flattened)
     public int lane;
     public float hitTime;
     public float beatNumber;
     public float spawnTime;
-    
-    [Header("Score Data")]
     public int score;
     public int combo;
     public int timingResult;
     
-    [Header("Sync/State Data")]
-    public float relayTimestamp; // Dedicated field for server-injected time
-    public float serverTime;     // Used for scheduled future events (e.g. GameStart)
+    // State fields
     public float songPosition;
     public int currentBeat;
-    public float beatProgress;
-    public float startTime;
+    public float beatProgress; // [복구] GameStateSyncManager 등에서 사용
+    public double startTime;    // [정밀도 업그레이드]
 
-    // Constructors
     public MessagePacket(PacketType type, string playerId, string roomId)
     {
         this.type = type;
         this.playerId = playerId;
         this.roomId = roomId;
-        this.timestamp = Time.realtimeSinceStartup; // Use absolute time
+        this.timestamp = Time.realtimeSinceStartup;
         this.systemTimestamp = DateTime.UtcNow.Ticks;
     }
 
-    // Constructor to satisfy 4-argument calls (backward compatibility)
+    // [복구] 호환성용 4개 인자 생성자
     public MessagePacket(PacketType type, string playerId, string roomId, object dummy) : this(type, playerId, roomId)
     {
-        // Dummy object is ignored in flat structure
     }
 
-    // Static helper methods for creating specialized packets
-    public static MessagePacket CreateScorePacket(string playerId, string roomId, int score, int combo, int result)
+    // Specialized packet creators
+    public static MessagePacket CreateScore(string id, string room, int score, int combo, int res)
     {
-        MessagePacket p = new MessagePacket(PacketType.PlayerScore, playerId, roomId);
-        p.score = score;
-        p.combo = combo;
-        p.timingResult = result;
+        MessagePacket p = new MessagePacket(PacketType.PlayerScore, id, room);
+        p.score = score; p.combo = combo; p.timingResult = res;
         return p;
     }
 
-    public static MessagePacket CreateHitPacket(string playerId, string roomId, int lane, int result, float hitTime)
+    public static MessagePacket CreateHit(string id, string room, int lane, int res, float hitTime)
     {
-        MessagePacket p = new MessagePacket(PacketType.NoteHit, playerId, roomId);
-        p.lane = lane;
-        p.timingResult = result;
-        p.hitTime = hitTime;
+        MessagePacket p = new MessagePacket(PacketType.NoteHit, id, room);
+        p.lane = lane; p.timingResult = res; p.hitTime = hitTime;
         return p;
     }
 
-    public static MessagePacket CreateSyncStartPacket(string playerId, string roomId, float serverStartTime)
+    public static MessagePacket CreateSyncStart(string id, string room, double targetNetworkTime)
     {
-        MessagePacket p = new MessagePacket(PacketType.GameStart, playerId, roomId);
-        p.serverTime = serverStartTime;
+        MessagePacket p = new MessagePacket(PacketType.GameStart, id, room);
+        p.serverTime = targetNetworkTime;
         return p;
     }
 }

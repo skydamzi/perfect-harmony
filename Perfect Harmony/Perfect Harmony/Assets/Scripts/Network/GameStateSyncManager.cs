@@ -44,9 +44,6 @@ public class GameStateSyncManager : MonoBehaviour
         {
             mpManager.udpManager.OnPacketReceived += HandlePacketReceived;
         }
-
-        // In central server architecture, clients don't send periodic game state syncs.
-        // The server is responsible for timing or relaying authority.
     }
 
     // Refresh references to scene objects (called by AutoSetup)
@@ -58,11 +55,10 @@ public class GameStateSyncManager : MonoBehaviour
         noteSpawner = FindFirstObjectByType<NoteSpawner>();
         
         hasSyncedStart = false;
-        // In flat structure, we don't have a serverNoteQueue class anymore, but we can still use a list of packets
         Debug.Log("GameStateSyncManager references refreshed.");
     }
 
-    // Send current game state (In central server mode, this might be requested or handled by server)
+    // Send current game state
     private void SendGameStateSync()
     {
         if (mpManager != null && mpManager.udpManager != null && mpManager.gameStarted)
@@ -80,40 +76,30 @@ public class GameStateSyncManager : MonoBehaviour
     // Handle received packets
     private void HandlePacketReceived(MessagePacket packet, System.Net.IPEndPoint sender)
     {
-        // Filter by room
         if (!string.IsNullOrEmpty(packet.roomId) && packet.roomId != mpManager.currentRoomId && packet.roomId != "Global")
             return;
 
         switch (packet.type)
         {
-            case PacketType.SyncGameState:
-                ProcessGameStatePacket(packet);
-                break;
-            case PacketType.NoteSpawn:
-                ProcessNoteSpawnPacket(packet);
-                break;
-            case PacketType.GameStart:
-                ProcessGameStartPacket(packet);
-                break;
+            case PacketType.SyncGameState: ProcessGameStatePacket(packet); break;
+            case PacketType.NoteSpawn: ProcessNoteSpawnPacket(packet); break;
         }
     }
 
     // Process game state packet from server
     private void ProcessGameStatePacket(MessagePacket packet)
     {
-        // Don't process our own sync packets if we sent them
         if (packet.playerId == mpManager.localPlayerId) return;
 
         if (rhythmGameManager != null)
         {
-            // The server says: "At this exact moment (packet arrival), my songPosition is X"
-            float currentTime = Time.time;
+            float currentTime = Time.realtimeSinceStartup;
             float serverSongPos = packet.songPosition;
             float calculatedStartTime = currentTime - serverSongPos;
 
             if (!hasSyncedStart)
             {
-                rhythmGameManager.actualSongStartTime = calculatedStartTime;
+                rhythmGameManager.actualSongStartTime = (double)calculatedStartTime;
                 targetSongStartTime = calculatedStartTime;
                 hasSyncedStart = true;
             }
@@ -128,29 +114,14 @@ public class GameStateSyncManager : MonoBehaviour
     private void ProcessNoteSpawnPacket(MessagePacket packet)
     {
         if (packet.playerId == mpManager.localPlayerId) return;
-
-        // In flat structure, note data is inside the packet fields
         SpawnNoteForClient(packet);
-    }
-
-    // Process game start packet
-    private void ProcessGameStartPacket(MessagePacket packet)
-    {
-        hasSyncedStart = false;
     }
 
     // Spawn note for client based on server's note data
     private void SpawnNoteForClient(MessagePacket noteData)
     {
-        if (noteSpawner == null)
-        {
-            noteSpawner = FindFirstObjectByType<NoteSpawner>();
-        }
-
-        if (noteSpawner == null || rhythmGameManager == null)
-        {
-            return;
-        }
+        if (noteSpawner == null) noteSpawner = FindFirstObjectByType<NoteSpawner>();
+        if (noteSpawner == null || rhythmGameManager == null) return;
 
         int baseLane = noteData.lane;
         CreateClientNoteInstance(baseLane, noteData);
@@ -159,23 +130,20 @@ public class GameStateSyncManager : MonoBehaviour
 
     private void CreateClientNoteInstance(int laneIndex, MessagePacket noteData)
     {
-        if (laneIndex >= noteSpawner.spawnPositions.Length || laneIndex >= noteSpawner.targetPositions.Length)
-             return;
+        if (laneIndex >= noteSpawner.spawnPositions.Length || laneIndex >= noteSpawner.targetPositions.Length) return;
 
         Transform spawnPos = noteSpawner.spawnPositions[laneIndex];
         Transform targetPos = noteSpawner.targetPositions[laneIndex];
 
         GameObject noteObj = Instantiate(noteSpawner.notePrefab, spawnPos.position, Quaternion.identity);
-        FallingNote note = noteObj.GetComponent<FallingNote>();
-
-        if (note == null) note = noteObj.AddComponent<FallingNote>();
+        FallingNote note = noteObj.GetComponent<FallingNote>() ?? noteObj.AddComponent<FallingNote>();
 
         note.lane = (NoteLane)laneIndex;
         note.beatNumber = noteData.beatNumber;
         note.spawnTime = noteData.spawnTime;
         note.targetPosition = targetPos;
         note.spawnPosition = spawnPos;
-        note.targetTime = rhythmGameManager.actualSongStartTime + rhythmGameManager.BeatToTime(note.beatNumber);
+        note.targetTime = (float)(rhythmGameManager.actualSongStartTime + (double)rhythmGameManager.BeatToTime(note.beatNumber));
         
         InputHandler inputHandler = FindFirstObjectByType<InputHandler>();
         if (inputHandler != null)
@@ -185,46 +153,31 @@ public class GameStateSyncManager : MonoBehaviour
         }
     }
 
-    // Update is called once per frame
     private void Update()
     {
-        // Smoothly adjust start time to match server/host authority
         if (hasSyncedStart && rhythmGameManager != null && mpManager != null)
         {
-            if (Mathf.Abs(rhythmGameManager.actualSongStartTime - targetSongStartTime) > 0.5f)
+            float currentActual = (float)rhythmGameManager.actualSongStartTime;
+            if (Mathf.Abs(currentActual - targetSongStartTime) > 0.5f)
             {
-                rhythmGameManager.actualSongStartTime = targetSongStartTime;
+                rhythmGameManager.actualSongStartTime = (double)targetSongStartTime;
             }
             else
             {
-                rhythmGameManager.actualSongStartTime = Mathf.Lerp(rhythmGameManager.actualSongStartTime, targetSongStartTime, Time.deltaTime * syncSmoothSpeed);
+                float lerped = Mathf.Lerp(currentActual, targetSongStartTime, Time.deltaTime * syncSmoothSpeed);
+                rhythmGameManager.actualSongStartTime = (double)lerped;
             }
         }
     }
 
-    // Send a note spawn event to the server for relay
     public void SendNoteSpawn(MessagePacket noteData)
     {
-        if (mpManager != null && mpManager.udpManager != null)
-        {
-            // The noteData passed here is already a MessagePacket
-            mpManager.udpManager.SendPacket(noteData);
-        }
-    }
-
-    // This method is no longer used in client-server mode as server handles sync
-    public void SendGameStateToPlayer(string playerId, IPEndPoint endpoint)
-    {
-        // Server responsibility
+        if (mpManager != null && mpManager.udpManager != null) mpManager.udpManager.SendPacket(noteData);
     }
 
     private void OnDestroy()
     {
-        if (mpManager != null && mpManager.udpManager != null)
-        {
-            mpManager.udpManager.OnPacketReceived -= HandlePacketReceived;
-        }
-        
+        if (mpManager != null && mpManager.udpManager != null) mpManager.udpManager.OnPacketReceived -= HandlePacketReceived;
         CancelInvoke("SendGameStateSync");
     }
 }

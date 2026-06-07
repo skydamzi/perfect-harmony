@@ -2,456 +2,204 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
+public enum MultiplayerState { Lobby, Loading, Ready, Playing }
+
 public class MultiplayerManager : MonoBehaviour
 {
     public static MultiplayerManager Instance { get; private set; }
 
     [Header("Network Settings")]
-    public string currentRoomId = "Lobby"; // Added for Central Server routing
+    public string currentRoomId = "Lobby";
     public UDPManager udpManager;
-
-    [Header("Player Data")]
     public string localPlayerId;
-    public Dictionary<string, PlayerData> connectedPlayers = new Dictionary<string, PlayerData>();
 
     [Header("Game State")]
-    public bool gameStarted = false;
-    private bool pendingSceneLoad = false; // Added for thread-safe scene loading
+    public MultiplayerState state = MultiplayerState.Lobby;
+    public Dictionary<string, PlayerData> connectedPlayers = new Dictionary<string, PlayerData>();
+
+    // [복구] 기존 스크립트들이 참조하는 변수
+    public bool gameStarted 
+    { 
+        get { return state != MultiplayerState.Lobby; }
+        set { if (value) state = MultiplayerState.Loading; else state = MultiplayerState.Lobby; }
+    }
+
+    public class PlayerData
+    {
+        public string playerId;   // [복구] 기존 명칭
+        public string playerName; // [복구] 기존 명칭
+        public bool isReady;      // Lobby ready
+        public bool isChartReady; // Analysis done
+        public int score;
+        public int combo;
+
+        public PlayerData(string id) { 
+            this.playerId = id; 
+            this.playerName = "Player_" + id.Substring(0, Mathf.Min(4, id.Length));
+        }
+    }
 
     public bool IsAuthority
     {
         get
         {
             if (connectedPlayers.Count <= 1) return true;
-            
-            // ID 리스트를 가져와서 알파벳 순으로 정렬
             List<string> ids = new List<string>(connectedPlayers.Keys);
             ids.Sort();
-            
-            // 가장 빠른 ID를 가진 사람이 방장
             return ids[0] == localPlayerId;
-        }
-    }
-
-    public int GetPlayerSlot()
-    {
-        int index = 0;
-        foreach (var id in connectedPlayers.Keys)
-        {
-            if (id == localPlayerId) return index;
-            index++;
-        }
-        return 0;
-    }
-
-    public class PlayerData
-    {
-        public string playerId;
-        public string playerName;
-        public int score;
-        public int combo;
-        public bool isReady;
-        public bool isChartReady; // Added: Track if chart analysis is done
-        
-        public PlayerData(string id, string name)
-        {
-            playerId = id;
-            playerName = name;
-            score = 0;
-            combo = 0;
-            isReady = false;
-            isChartReady = false;
         }
     }
 
     private void Awake()
     {
-        if (Instance != null && Instance != this)
-        {
-            Destroy(gameObject);
-        }
-        else
-        {
-            Instance = this;
-            DontDestroyOnLoad(gameObject);
-        }
+        if (Instance != null && Instance != this) Destroy(gameObject);
+        else { Instance = this; DontDestroyOnLoad(gameObject); }
     }
 
     private void Start()
     {
-        // Get or create UDP manager
-        if (udpManager == null)
-        {
-            udpManager = FindFirstObjectByType<UDPManager>();
-            if (udpManager == null)
-            {
-                GameObject udpManagerObj = new GameObject("UDPManager");
-                udpManager = udpManagerObj.AddComponent<UDPManager>();
-            }
-        }
-
-        // Set up network event handlers
-        if (udpManager != null)
-        {
-            udpManager.OnPacketReceived += HandlePacketReceived;
-        }
-
-        // Generate local player ID
+        if (udpManager == null) udpManager = FindFirstObjectByType<UDPManager>() ?? new GameObject("UDPManager").AddComponent<UDPManager>();
+        udpManager.OnPacketReceived += HandlePacket;
         localPlayerId = SystemInfo.deviceUniqueIdentifier + "_" + Random.Range(0, 10000);
-
-        // Add local player to the dictionary
-        if (!connectedPlayers.ContainsKey(localPlayerId))
-        {
-            connectedPlayers.Add(localPlayerId, new PlayerData(localPlayerId, "Player_Local"));
-        }
+        connectedPlayers.Add(localPlayerId, new PlayerData(localPlayerId));
     }
 
     private void Update()
     {
-        // Safety: Trigger scene load from the main thread
-        if (pendingSceneLoad)
+        if (state == MultiplayerState.Ready && IsAuthority)
         {
-            pendingSceneLoad = false;
-            gameStarted = true;
-            Debug.Log("Executing pending scene load: Playing");
-            SceneManager.LoadScene("Playing");
-        }
-
-        // Host logic: Check if everyone is chart ready and trigger countdown
-        if (IsAuthority && gameStarted && SceneManager.GetActiveScene().name == "Playing")
-        {
-            CheckAllPlayersChartReady();
+            CheckAndStartGame();
         }
     }
 
-    private bool countdownTriggered = false;
-    private void CheckAllPlayersChartReady()
-    {
-        if (countdownTriggered) return;
+    // --- Core Logic ---
 
-        bool allReady = true;
+    private void CheckAndStartGame()
+    {
+        bool everyoneReady = true;
         foreach (var p in connectedPlayers.Values)
         {
-            if (!p.isChartReady)
-            {
-                allReady = false;
-                break;
-            }
+            if (!p.isChartReady) { everyoneReady = false; break; }
         }
 
-        if (allReady && connectedPlayers.Count >= 2)
+        if (everyoneReady && connectedPlayers.Count >= 2)
         {
-            countdownTriggered = true;
-            // Everyone is ready! Sync start in 2 seconds
-            float syncStartTime = TimingSyncManager.Instance.GetAdjustedServerTime() + 2.0f;
-            SendSyncStart(syncStartTime);
+            // Start in 3 seconds using Server Time
+            float startDelay = 3.0f;
+            if (RhythmGameManager.Instance != null) startDelay = RhythmGameManager.Instance.startDelay;
+            
+            double targetTime = TimingSyncManager.Instance.GetAdjustedServerTime() + (double)startDelay;
+            BroadcastSyncStart(targetTime);
         }
     }
 
-    private void SendSyncStart(float networkStartTime)
+    private void BroadcastSyncStart(double targetTime)
     {
-        MessagePacket packet = MessagePacket.CreateSyncStartPacket(localPlayerId, currentRoomId, networkStartTime);
-        udpManager.SendPacket(packet);
-        
-        // Local start
-        ProcessSyncStart(networkStartTime);
+        MessagePacket p = MessagePacket.CreateSyncStart(localPlayerId, currentRoomId, targetTime);
+        p.serverTime = targetTime; 
+        udpManager.SendPacket(p);
+        ExecuteStart(targetTime);
     }
 
-    private void ProcessSyncStart(float networkStartTime)
+    private void ExecuteStart(double targetTime)
     {
-        if (RhythmGameManager.Instance != null)
-        {
-            RhythmGameManager.Instance.StartCountdownSync(networkStartTime);
-        }
+        state = MultiplayerState.Playing;
+        if (RhythmGameManager.Instance != null) RhythmGameManager.Instance.StartCountdownSync(targetTime);
     }
 
-    [Header("Debug Info")]
-    public string lastPacketTypeReceived;
-    public float lastPacketTime;
+    // --- Packet Handlers ---
 
-    private void OnGUI()
+    private void HandlePacket(MessagePacket p, System.Net.IPEndPoint sender)
     {
-        GUILayout.BeginArea(new Rect(10, 10, 300, 550));
-        GUILayout.Box("Central Server Multiplayer");
-        GUILayout.Label($"Local ID: {localPlayerId}");
-        GUILayout.Label($"Room: {currentRoomId}");
-        GUILayout.Label($"Game Started: {gameStarted}");
-        
-        GUILayout.Space(10);
-        GUILayout.Label("Room Players:");
-        foreach(var p in connectedPlayers.Values)
-        {
-            string status = p.isChartReady ? "Chart OK" : (p.isReady ? "Ready" : "Waiting");
-            GUILayout.Label($"- {p.playerId.Substring(0, 8)}... : {status}, Score={p.score}");
-        }
+        if (!string.IsNullOrEmpty(p.roomId) && p.roomId != currentRoomId && p.roomId != "Global") return;
 
-        GUILayout.Space(10);
-        GUILayout.Label($"Last Packet: {lastPacketTypeReceived} @ {lastPacketTime:F2}");
-
-        if (TimingSyncManager.Instance != null)
-        {
-            GUILayout.Label($"Server Latency: {TimingSyncManager.Instance.packetExchangeLatency:F1} ms");
-            GUILayout.Label($"Server Time: {TimingSyncManager.Instance.GetAdjustedServerTime():F2}");
-        }
-
-        if (GUILayout.Button("Force Load 'Playing' Scene"))
-        {
-            SceneManager.LoadSceneAsync("Playing");
-        }
-        
-        GUILayout.EndArea();
-    }
-
-    // Handle incoming packets from central server
-    private void HandlePacketReceived(MessagePacket packet, System.Net.IPEndPoint sender)
-    {
-        // For central server, we only process packets that belong to our room or global system packets
-        if (!string.IsNullOrEmpty(packet.roomId) && packet.roomId != currentRoomId && packet.roomId != "Global")
-        {
-            return;
-        }
-
-        lastPacketTypeReceived = packet.type.ToString();
-        lastPacketTime = Time.time;
-
-        switch (packet.type)
+        switch (p.type)
         {
             case PacketType.Connect:
-            case PacketType.JoinRoom:
-                HandlePlayerConnect(packet, sender);
-                break;
-            case PacketType.Disconnect:
-            case PacketType.LeaveRoom:
-                HandlePlayerDisconnect(packet);
-                break;
-            case PacketType.PlayerInput:
-                HandlePlayerInput(packet);
-                break;
-            case PacketType.PlayerScore:
-                HandlePlayerScore(packet);
-                break;
-            case PacketType.PlayerReady:
-                HandlePlayerReady(packet);
-                break;
-            case PacketType.GameStart:
-                HandleGameStart(packet);
-                break;
-            case PacketType.GameStop:
-                HandleGameStop(packet);
-                break;
-            case PacketType.NoteHit:
-            case PacketType.NoteMiss:
-                HandleNoteHit(packet);
-                break;
-            case PacketType.SyncTime:
-                HandleSyncTime(packet);
-                break;
-            case PacketType.SyncGameState:
-                HandleSyncGameState(packet);
-                break;
+            case PacketType.JoinRoom: HandleJoin(p); break;
+            case PacketType.PlayerReady: HandleReady(p); break;
+            case PacketType.GameStart: HandleGameStart(p); break;
+            case PacketType.PlayerInput: HandleInput(p); break;
+            case PacketType.PlayerScore: HandleScore(p); break;
+            case PacketType.NoteHit: HandleHit(p); break;
         }
     }
 
-    // Handle player connection/join
-    private void HandlePlayerConnect(MessagePacket packet, System.Net.IPEndPoint sender)
+    private void HandleJoin(MessagePacket p)
     {
-        if (packet.playerId == localPlayerId) return;
-
-        if (!connectedPlayers.ContainsKey(packet.playerId))
+        if (p.playerId == localPlayerId) return;
+        if (!connectedPlayers.ContainsKey(p.playerId))
         {
-            connectedPlayers[packet.playerId] = new PlayerData(packet.playerId, $"Player_{connectedPlayers.Count}");
-            Debug.Log($"Player joined room: {packet.playerId}");
-
-            // 만약 내가 이미 이 방에 있던 사람이라면, 새로 들어온 사람에게 내 정보를 알려줘야 함
-            // JoinRoom 패킷을 받았을 때만 응답 (무한 루프 방지 위해 Connect 타입으로 응답)
-            if (packet.type == PacketType.JoinRoom)
-            {
-                MessagePacket replyPacket = new MessagePacket(PacketType.Connect, localPlayerId, currentRoomId);
-                udpManager.SendPacket(replyPacket);
-                Debug.Log($"Sent discovery reply to new player: {packet.playerId}");
-            }
+            connectedPlayers[p.playerId] = new PlayerData(p.playerId);
+            // Reply to let them know we are here
+            udpManager.SendPacket(new MessagePacket(PacketType.Connect, localPlayerId, currentRoomId));
         }
     }
 
-    // Handle player disconnect/leave
-    private void HandlePlayerDisconnect(MessagePacket packet)
+    private void HandleReady(MessagePacket p)
     {
-        if (connectedPlayers.ContainsKey(packet.playerId))
+        if (connectedPlayers.ContainsKey(p.playerId))
         {
-            connectedPlayers.Remove(packet.playerId);
-            Debug.Log($"Player left room: {packet.playerId}");
-        }
-    }
-
-    // Handle player input
-    private void HandlePlayerInput(MessagePacket packet)
-    {
-        if (packet.playerId == localPlayerId) return;
-
-        MultiplayerInputHandler mpInputHandler = FindFirstObjectByType<MultiplayerInputHandler>();
-        if (mpInputHandler != null)
-        {
-            mpInputHandler.ProcessRemoteInput(packet.lane, packet.hitTime, packet.playerId);
-        }
-    }
-
-    // Handle player score update
-    private void HandlePlayerScore(MessagePacket packet)
-    {
-        if (packet.playerId == localPlayerId) return;
-
-        if (connectedPlayers.ContainsKey(packet.playerId))
-        {
-            connectedPlayers[packet.playerId].score = packet.score;
-            connectedPlayers[packet.playerId].combo = packet.combo;
-
-            MultiplayerInputHandler mpInputHandler = FindFirstObjectByType<MultiplayerInputHandler>();
-            if (mpInputHandler != null)
-            {
-                mpInputHandler.HandleRemoteScoreUpdate(packet.playerId, packet.score, packet.combo, (TimingResult)packet.timingResult);
-            }
-        }
-    }
-
-    // Handle player ready state
-    private void HandlePlayerReady(MessagePacket packet)
-    {
-        if (connectedPlayers.ContainsKey(packet.playerId))
-        {
-            // 씬에 따라 로비 레디와 인게임 채보 레디를 구분
             if (SceneManager.GetActiveScene().name == "Playing")
             {
-                connectedPlayers[packet.playerId].isChartReady = true;
-                Debug.Log($"Player {packet.playerId} CHART is ready.");
+                connectedPlayers[p.playerId].isChartReady = true;
+                Debug.Log($"[Sync] Player {p.playerId} CHART READY");
             }
             else
             {
-                connectedPlayers[packet.playerId].isReady = true;
-                Debug.Log($"Player {packet.playerId} LOBBY is ready.");
+                connectedPlayers[p.playerId].isReady = true;
             }
         }
     }
 
-    // Handle game start command from the central server
-    private void HandleGameStart(MessagePacket packet)
+    private void HandleGameStart(MessagePacket p)
     {
-        // 1. Scene load logic (if not started)
-        if (!gameStarted && !pendingSceneLoad)
+        // Case 1: Initial transition from Lobby
+        if (state == MultiplayerState.Lobby)
         {
-            Debug.Log($"Received GameStart from server for room {currentRoomId}. Scheduling scene load.");
-            pendingSceneLoad = true;
-            countdownTriggered = false; // Reset for new game
-            return;
+            state = MultiplayerState.Loading;
+            SceneManager.LoadScene("Playing");
         }
-
-        // 2. Synchronized rhythm start logic (if already in scene)
-        if (packet.serverTime > 0)
+        // Case 2: Synchronized start in Playing scene
+        else if (p.serverTime > 0 && state != MultiplayerState.Playing)
         {
-            // [중요] 이미 카운트다운이 진행 중이면 무시 (서버의 중복 패킷 방지)
-            if (RhythmGameManager.Instance != null && (RhythmGameManager.Instance.isCountingDown || RhythmGameManager.Instance.isPlaying))
-            {
-                return;
-            }
-
-            Debug.Log($"Received Synchronized Start signal. Starting in {packet.serverTime - TimingSyncManager.Instance.GetAdjustedServerTime()}s");
-            ProcessSyncStart(packet.serverTime);
+            ExecuteStart(p.serverTime);
         }
     }
 
-    // Handle game stop command
-    private void HandleGameStop(MessagePacket packet)
+    private void HandleInput(MessagePacket p)
     {
-        Debug.Log("Game stopped by server");
-        gameStarted = false;
-        countdownTriggered = false;
+        if (p.playerId == localPlayerId) return;
+        var handler = FindFirstObjectByType<MultiplayerInputHandler>();
+        if (handler) handler.ProcessRemoteInput(p.lane, p.hitTime, p.playerId);
     }
 
-    private void HandleNoteHit(MessagePacket packet)
+    private void HandleScore(MessagePacket p)
     {
-        if (packet.playerId == localPlayerId) return;
+        if (p.playerId == localPlayerId || !connectedPlayers.ContainsKey(p.playerId)) return;
+        connectedPlayers[p.playerId].score = p.score;
+        connectedPlayers[p.playerId].combo = p.combo;
+        var handler = FindFirstObjectByType<MultiplayerInputHandler>();
+        if (handler) handler.HandleRemoteScoreUpdate(p.playerId, p.score, p.combo, (TimingResult)p.timingResult);
+    }
 
-        MultiplayerInputHandler mpInputHandler = FindFirstObjectByType<MultiplayerInputHandler>();
-        if (mpInputHandler != null)
-        {
-            mpInputHandler.HandleRemoteNoteHit(packet.lane, (TimingResult)packet.timingResult);
+    private void HandleHit(MessagePacket p)
+    {
+        if (p.playerId == localPlayerId) return;
+        var handler = FindFirstObjectByType<MultiplayerInputHandler>();
+        if (handler) handler.HandleRemoteNoteHit(p.lane, (TimingResult)p.timingResult);
+    }
+
+    // --- [복구] API for other scripts ---
+
+    public int GetPlayerSlot()
+    {
+        List<string> ids = new List<string>(connectedPlayers.Keys);
+        ids.Sort();
+        for (int i = 0; i < ids.Count; i++) {
+            if (ids[i] == localPlayerId) return i;
         }
-    }
-
-    private void HandleSyncTime(MessagePacket packet)
-    {
-        // Central server will send timing sync packets
-    }
-
-    private void HandleSyncGameState(MessagePacket packet)
-    {
-        // Central server will sync game state for the room
-    }
-
-    public void JoinRoom(string roomId)
-    {
-        currentRoomId = roomId;
-        connectedPlayers.Clear();
-        // Add local player back
-        connectedPlayers.Add(localPlayerId, new PlayerData(localPlayerId, "Player_Local"));
-
-        MessagePacket packet = new MessagePacket(PacketType.JoinRoom, localPlayerId, currentRoomId);
-        udpManager.SendPacket(packet);
-        Debug.Log($"Sending JoinRoom request for: {roomId}");
-    }
-
-    public void SendPlayerInput(int lane, float inputTime)
-    {
-        MessagePacket packet = new MessagePacket(PacketType.PlayerInput, localPlayerId, currentRoomId);
-        packet.lane = lane;
-        packet.hitTime = inputTime;
-        udpManager.SendPacket(packet);
-    }
-
-    public void SendPlayerScore(int score, int combo, TimingResult timingResult)
-    {
-        MessagePacket packet = MessagePacket.CreateScorePacket(localPlayerId, currentRoomId, score, combo, (int)timingResult);
-        udpManager.SendPacket(packet);
-    }
-
-    public void SendPlayerReady()
-    {
-        if (connectedPlayers.ContainsKey(localPlayerId))
-        {
-            connectedPlayers[localPlayerId].isReady = true;
-        }
-
-        MessagePacket packet = new MessagePacket(PacketType.PlayerReady, localPlayerId, currentRoomId);
-        udpManager.SendPacket(packet);
-    }
-
-    public void SendChartReady()
-    {
-        if (connectedPlayers.ContainsKey(localPlayerId))
-        {
-            connectedPlayers[localPlayerId].isChartReady = true;
-        }
-
-        // Use PlayerReady packet type to signal chart is ready
-        MessagePacket packet = new MessagePacket(PacketType.PlayerReady, localPlayerId, currentRoomId);
-        udpManager.SendPacket(packet);
-        Debug.Log("Sent ChartReady signal to other players.");
-    }
-
-    public void SendNoteHit(int lane, TimingResult result)
-    {
-        MessagePacket packet = MessagePacket.CreateHitPacket(localPlayerId, currentRoomId, lane, (int)result, Time.time);
-        udpManager.SendPacket(packet);
-    }
-
-    public void SendGameStartRequest()
-    {
-        // In central server mode, we request the server to start the game
-        MessagePacket packet = new MessagePacket(PacketType.GameStart, localPlayerId, currentRoomId, null);
-        udpManager.SendPacket(packet);
-        
-        Debug.Log("Sent GameStart request to server. Triggering local start.");
-        // Host (sender) should also start their own scene transition
-        HandleGameStart(packet);
+        return 0;
     }
 
     public bool HasRequiredPlayers()
@@ -459,11 +207,55 @@ public class MultiplayerManager : MonoBehaviour
         return connectedPlayers.Count >= 2;
     }
 
-    private void OnDestroy()
+    public void SendNoteHit(int lane, TimingResult res)
     {
-        if (udpManager != null)
-        {
-            udpManager.OnPacketReceived -= HandlePacketReceived;
-        }
+        udpManager.SendPacket(MessagePacket.CreateHit(localPlayerId, currentRoomId, lane, (int)res, Time.realtimeSinceStartup));
+    }
+
+    public void JoinRoom(string roomId)
+    {
+        currentRoomId = roomId;
+        connectedPlayers.Clear();
+        connectedPlayers.Add(localPlayerId, new PlayerData(localPlayerId));
+        state = MultiplayerState.Lobby;
+        udpManager.SendPacket(new MessagePacket(PacketType.JoinRoom, localPlayerId, currentRoomId));
+    }
+
+    public void SendChartReady()
+    {
+        state = MultiplayerState.Ready;
+        if (connectedPlayers.ContainsKey(localPlayerId)) connectedPlayers[localPlayerId].isChartReady = true;
+        CancelInvoke("RepeatChartReady");
+        InvokeRepeating("RepeatChartReady", 0f, 0.5f);
+    }
+
+    private void RepeatChartReady()
+    {
+        if (state != MultiplayerState.Ready) { CancelInvoke("RepeatChartReady"); return; }
+        udpManager.SendPacket(new MessagePacket(PacketType.PlayerReady, localPlayerId, currentRoomId));
+    }
+
+    public void SendGameStartRequest()
+    {
+        if (!IsAuthority) return;
+        udpManager.SendPacket(new MessagePacket(PacketType.GameStart, localPlayerId, currentRoomId));
+    }
+
+    public void SendPlayerInput(int lane, float time)
+    {
+        MessagePacket p = new MessagePacket(PacketType.PlayerInput, localPlayerId, currentRoomId);
+        p.lane = lane; p.hitTime = time;
+        udpManager.SendPacket(p);
+    }
+
+    public void SendPlayerScore(int score, int combo, TimingResult res)
+    {
+        udpManager.SendPacket(MessagePacket.CreateScore(localPlayerId, currentRoomId, score, combo, (int)res));
+    }
+
+    public void SendPlayerReady()
+    {
+        if (connectedPlayers.ContainsKey(localPlayerId)) connectedPlayers[localPlayerId].isReady = true;
+        udpManager.SendPacket(new MessagePacket(PacketType.PlayerReady, localPlayerId, currentRoomId));
     }
 }

@@ -8,7 +8,7 @@ public class TimingSyncManager : MonoBehaviour
     [Header("Timing Sync Settings")]
     public float syncInterval = 1.0f; // Send sync packets every second
     public float maxSyncHistory = 10; // Number of sync records to keep for calculation
-    public float networkTimeOffset = 0f; // Calculated offset between local and server time
+    public double networkTimeOffset = 0; // [정밀도] Calculated offset between local and server time
     public float packetExchangeLatency = 0f; // Round-trip time in milliseconds
 
     [Header("Rhythm Sync")]
@@ -24,11 +24,11 @@ public class TimingSyncManager : MonoBehaviour
     private class SyncRecord
     {
         public float localTime; // When we sent/received the sync
-        public float serverTime; // Server's time from the packet
+        public double serverTime; // [정밀도] Server's time from the packet
         public float serverSongPosition; // Server's song position
         public int serverBeat; // Server's current beat
 
-        public SyncRecord(float local, float server, float songPos, int beat)
+        public SyncRecord(float local, double server, float songPos, int beat)
         {
             localTime = local;
             serverTime = server;
@@ -79,7 +79,7 @@ public class TimingSyncManager : MonoBehaviour
         if (mpManager != null && mpManager.udpManager != null && !mpManager.IsAuthority)
         {
             MessagePacket packet = new MessagePacket(PacketType.SyncTime, mpManager.localPlayerId, mpManager.currentRoomId);
-            packet.serverTime = Time.realtimeSinceStartup;
+            packet.serverTime = (double)Time.realtimeSinceStartup;
             packet.songPosition = rhythmGameManager != null ? rhythmGameManager.songPosition : 0f;
             packet.currentBeat = rhythmGameManager != null ? rhythmGameManager.currentBeat : 0;
             
@@ -151,7 +151,7 @@ public class TimingSyncManager : MonoBehaviour
         // Update local game state based on server's state
         serverSongPosition = packet.songPosition;
         serverCurrentBeat = packet.currentBeat;
-        serverSongStartTime = packet.startTime;
+        serverSongStartTime = (float)packet.startTime;
     }
 
     // Process ping packet (Pong)
@@ -167,7 +167,7 @@ public class TimingSyncManager : MonoBehaviour
             if (packet.relayTimestamp > 0)
             {
                 // 왕복 시간의 절반을 더해 서버의 '현재' 시간을 추정
-                float estimatedServerNow = packet.relayTimestamp + (packetExchangeLatency / 2000.0f);
+                double estimatedServerNow = packet.relayTimestamp + (packetExchangeLatency / 2000.0);
                 SyncRecord record = new SyncRecord(Time.realtimeSinceStartup, estimatedServerNow, 0, 0);
                 syncHistory.Add(record);
                 if (syncHistory.Count > maxSyncHistory) syncHistory.RemoveAt(0);
@@ -181,7 +181,7 @@ public class TimingSyncManager : MonoBehaviour
     {
         if (syncHistory.Count < 2) return;
         
-        float totalTimeOffset = 0f;
+        double totalTimeOffset = 0;
         int validCalculations = 0;
         
         for (int i = 1; i < syncHistory.Count; i++)
@@ -190,7 +190,7 @@ public class TimingSyncManager : MonoBehaviour
             SyncRecord current = syncHistory[i];
             
             // 오차 계산: (중앙 서버 시각 - 내 로컬 시각)
-            float timeOffset = (current.serverTime - current.localTime + prev.serverTime - prev.localTime) / 2f;
+            double timeOffset = (current.serverTime - current.localTime + prev.serverTime - prev.localTime) / 2.0;
             
             totalTimeOffset += timeOffset;
             validCalculations++;
@@ -203,14 +203,14 @@ public class TimingSyncManager : MonoBehaviour
     }
 
     // Get server time adjusted for network offset
-    public float GetAdjustedServerTime()
+    public double GetAdjustedServerTime()
     {
         // 방장 포함 모든 클라이언트가 서버 시계에 자신을 맞춤
-        return Time.realtimeSinceStartup + networkTimeOffset;
+        return (double)Time.realtimeSinceStartup + networkTimeOffset;
     }
 
     // Get the time difference between server and local
-    public float GetTimeOffset()
+    public double GetTimeOffset()
     {
         return networkTimeOffset;
     }
@@ -246,37 +246,5 @@ public class TimingSyncManager : MonoBehaviour
         }
         
         CancelInvoke("SendSyncPacket");
-    }
-}
-
-[System.Serializable]
-public class SyncData
-{
-    public float serverTime;
-    public float serverSongPosition;
-    public int serverBeat;
-    
-    public SyncData(float time, float songPos, int beat)
-    {
-        serverTime = time;
-        serverSongPosition = songPos;
-        serverBeat = beat;
-    }
-}
-
-[System.Serializable]
-public class GameStateData
-{
-    public float startTime;
-    public float songPosition;
-    public int currentBeat;
-    public float beatProgress;
-    
-    public GameStateData(float start, float pos, int beat, float progress)
-    {
-        startTime = start;
-        songPosition = pos;
-        currentBeat = beat;
-        beatProgress = progress;
     }
 }
