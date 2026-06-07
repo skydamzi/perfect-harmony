@@ -19,7 +19,7 @@ public class FallingNote : MonoBehaviour
 
     void Start()
     {
-        spawnTime = Time.time;
+        spawnTime = Time.realtimeSinceStartup;
 
         // 시작 위치 초기화
         if (spawnPosition != null)
