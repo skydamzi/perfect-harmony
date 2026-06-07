@@ -22,13 +22,14 @@ public class MultiplayerManager : MonoBehaviour
     {
         get
         {
-            // Simple authority: the first player in the list (usually the room creator)
-            if (connectedPlayers.Count == 0) return true;
-            foreach (var id in connectedPlayers.Keys)
-            {
-                return id == localPlayerId;
-            }
-            return true;
+            if (connectedPlayers.Count <= 1) return true;
+            
+            // ID 리스트를 가져와서 알파벳 순으로 정렬
+            List<string> ids = new List<string>(connectedPlayers.Keys);
+            ids.Sort();
+            
+            // 가장 빠른 ID를 가진 사람이 방장
+            return ids[0] == localPlayerId;
         }
     }
 
@@ -346,6 +347,12 @@ public class MultiplayerManager : MonoBehaviour
         // 2. Synchronized rhythm start logic (if already in scene)
         if (packet.serverTime > 0)
         {
+            // [중요] 이미 카운트다운이 진행 중이면 무시 (서버의 중복 패킷 방지)
+            if (RhythmGameManager.Instance != null && (RhythmGameManager.Instance.isCountingDown || RhythmGameManager.Instance.isPlaying))
+            {
+                return;
+            }
+
             Debug.Log($"Received Synchronized Start signal. Starting in {packet.serverTime - TimingSyncManager.Instance.GetAdjustedServerTime()}s");
             ProcessSyncStart(packet.serverTime);
         }

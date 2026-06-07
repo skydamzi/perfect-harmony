@@ -23,7 +23,8 @@ public class MessagePacket
     public int timingResult;
     
     [Header("Sync/State Data")]
-    public float serverTime;
+    public float relayTimestamp; // Dedicated field for server-injected time
+    public float serverTime;     // Used for scheduled future events (e.g. GameStart)
     public float songPosition;
     public int currentBeat;
     public float beatProgress;

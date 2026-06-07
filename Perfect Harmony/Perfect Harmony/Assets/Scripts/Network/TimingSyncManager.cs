@@ -121,41 +121,33 @@ public class TimingSyncManager : MonoBehaviour
     // Process a sync packet from server
     private void ProcessSyncPacket(MessagePacket packet)
     {
-        // Add to sync history (don't add our own)
-        if (packet.playerId != mpManager.localPlayerId)
+        // [중앙 서버 기준 동기화] 모든 유저는 서버가 찍어준 relayTimestamp를 기준으로 오차 계산
+        if (packet.relayTimestamp > 0)
         {
-            SyncRecord record = new SyncRecord(Time.realtimeSinceStartup, packet.serverTime, packet.songPosition, packet.currentBeat);
+            SyncRecord record = new SyncRecord(Time.realtimeSinceStartup, packet.relayTimestamp, packet.songPosition, packet.currentBeat);
             syncHistory.Add(record);
             
-            // Keep only the latest sync records
             if (syncHistory.Count > maxSyncHistory)
             {
                 syncHistory.RemoveAt(0);
             }
             
-            // Calculate time offset
             CalculateTimeOffset();
-            
-            // Update server's current state
+        }
+
+        // [참가자 전용] 방장의 상태(노래 위치 등)를 추가로 참고
+        if (!mpManager.IsAuthority && packet.playerId != mpManager.localPlayerId)
+        {
             serverSongPosition = packet.songPosition;
             serverCurrentBeat = packet.currentBeat;
-        }
-        
-        // If we're the authority, broadcast this back to all clients in the room via server relay
-        if (mpManager.IsAuthority && packet.playerId != mpManager.localPlayerId)
-        {
-            MessagePacket responsePacket = new MessagePacket(PacketType.SyncTime, mpManager.localPlayerId, mpManager.currentRoomId);
-            responsePacket.serverTime = Time.realtimeSinceStartup;
-            responsePacket.songPosition = rhythmGameManager != null ? rhythmGameManager.songPosition : 0f;
-            responsePacket.currentBeat = rhythmGameManager != null ? rhythmGameManager.currentBeat : 0;
-            
-            mpManager.udpManager.SendPacket(responsePacket);
         }
     }
 
     // Process game state sync packet
     private void ProcessGameStatePacket(MessagePacket packet)
     {
+        if (mpManager.IsAuthority) return;
+
         // Update local game state based on server's state
         serverSongPosition = packet.songPosition;
         serverCurrentBeat = packet.currentBeat;
@@ -168,10 +160,19 @@ public class TimingSyncManager : MonoBehaviour
         // Only process if it's our own ping echoed back
         if (mpManager != null && packet.playerId == mpManager.localPlayerId)
         {
-            // Use high-precision system ticks for RTT calculation (10,000 ticks = 1 ms)
-            // This avoids frame-rate quantization (e.g. 16.6ms at 60fps)
             double rttMs = (System.DateTime.UtcNow.Ticks - packet.systemTimestamp) / 10000.0;
             packetExchangeLatency = (float)rttMs; 
+
+            // [추가] 핑 패킷에 포함된 서버 시간으로도 동기화 수행 (더 빈번한 갱신)
+            if (packet.relayTimestamp > 0)
+            {
+                // 왕복 시간의 절반을 더해 서버의 '현재' 시간을 추정
+                float estimatedServerNow = packet.relayTimestamp + (packetExchangeLatency / 2000.0f);
+                SyncRecord record = new SyncRecord(Time.realtimeSinceStartup, estimatedServerNow, 0, 0);
+                syncHistory.Add(record);
+                if (syncHistory.Count > maxSyncHistory) syncHistory.RemoveAt(0);
+                CalculateTimeOffset();
+            }
         }
     }
 
@@ -180,7 +181,6 @@ public class TimingSyncManager : MonoBehaviour
     {
         if (syncHistory.Count < 2) return;
         
-        // Calculate average round-trip time and time offset
         float totalTimeOffset = 0f;
         int validCalculations = 0;
         
@@ -189,10 +189,7 @@ public class TimingSyncManager : MonoBehaviour
             SyncRecord prev = syncHistory[i - 1];
             SyncRecord current = syncHistory[i];
             
-            // Calculate round trip time
-            float localRoundTripTime = current.localTime - prev.localTime;
-            
-            // Calculate offset between local and server times
+            // 오차 계산: (중앙 서버 시각 - 내 로컬 시각)
             float timeOffset = (current.serverTime - current.localTime + prev.serverTime - prev.localTime) / 2f;
             
             totalTimeOffset += timeOffset;
@@ -208,6 +205,7 @@ public class TimingSyncManager : MonoBehaviour
     // Get server time adjusted for network offset
     public float GetAdjustedServerTime()
     {
+        // 방장 포함 모든 클라이언트가 서버 시계에 자신을 맞춤
         return Time.realtimeSinceStartup + networkTimeOffset;
     }
 

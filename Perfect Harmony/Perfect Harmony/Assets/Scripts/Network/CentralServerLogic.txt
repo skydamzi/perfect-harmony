@@ -183,12 +183,18 @@ class UDPRelayProtocol(asyncio.DatagramProtocol):
 
             # [B] 핑 (Ping: 2)
             elif p_type == 2:
-                self.transport.sendto(data, addr)
+                import time
+                packet["relayTimestamp"] = time.time()
+                updated_data = json.dumps(packet).encode('utf-8')
+                self.transport.sendto(updated_data, addr)
 
             # [C] 게임 시작 (GameStart: 5)
             elif p_type == 5:
                 print(f"-> [UDP] [{room_id}] 게임 시작 신호 수신 (By {player_id})")
-                asyncio.create_task(self.reliable_broadcast(room_id, data))
+                import time
+                packet["relayTimestamp"] = time.time()
+                updated_data = json.dumps(packet).encode('utf-8')
+                asyncio.create_task(self.reliable_broadcast(room_id, updated_data))
 
             # [D] 퇴장 (Disconnect: 1, LeaveRoom: 4)
             elif p_type in (1, 4):
@@ -201,7 +207,11 @@ class UDPRelayProtocol(asyncio.DatagramProtocol):
 
             # [E] 일반 중계 (나머지 모든 패킷)
             else:
-                self.broadcast(room_id, data, exclude_id=player_id)
+                # 패킷에 서버의 현재 시간(초)을 주입하여 동기화 기준 제공
+                import time
+                packet["relayTimestamp"] = time.time()
+                updated_data = json.dumps(packet).encode('utf-8')
+                self.broadcast(room_id, updated_data, exclude_id=player_id)
 
         except Exception as e:
             print(f"-> [UDP] 패킷 처리 오류: {e}")
