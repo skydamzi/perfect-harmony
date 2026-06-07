@@ -109,7 +109,7 @@ public class MultiplayerManager : MonoBehaviour
 
     // --- Packet Handlers ---
 
-    private void HandlePacket(MessagePacket p, System.Net.IPEndPoint sender)
+    private void HandlePacket(MessagePacket p, System.Net.IPEndPoint sender, double arrivalTimestamp)
     {
         if (!string.IsNullOrEmpty(p.roomId) && p.roomId != currentRoomId && p.roomId != "Global") return;
 

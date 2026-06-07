@@ -18,6 +18,7 @@ public class UDPManager : MonoBehaviour
     {
         public byte[] rawData;
         public IPEndPoint sender;
+        public double arrivalTimestamp; // Measured in the background thread
     }
 
     // Queue to store raw bytes received from the background thread
@@ -29,7 +30,7 @@ public class UDPManager : MonoBehaviour
     public int port = 8080;
     public bool isServer = false; // Always false for central server clients
 
-    public Action<MessagePacket, IPEndPoint> OnPacketReceived;
+    public Action<MessagePacket, IPEndPoint, double> OnPacketReceived;
 
     private void Awake()
     {
@@ -64,7 +65,6 @@ public class UDPManager : MonoBehaviour
                     if (string.IsNullOrEmpty(rawJson)) continue;
 
                     // Support for multiple JSON objects in a single UDP datagram
-                    // (e.g. "{"type":1}{"type":2}")
                     int braceCount = 0;
                     int startIndex = 0;
                     for (int i = 0; i < rawJson.Length; i++)
@@ -76,7 +76,7 @@ public class UDPManager : MonoBehaviour
                             if (braceCount == 0)
                             {
                                 string singleJson = rawJson.Substring(startIndex, i - startIndex + 1);
-                                ProcessSinglePacket(singleJson, info.sender);
+                                ProcessSinglePacket(singleJson, info.sender, info.arrivalTimestamp);
                                 startIndex = i + 1;
                             }
                         }
@@ -90,20 +90,15 @@ public class UDPManager : MonoBehaviour
         }
     }
 
-    private void ProcessSinglePacket(string json, IPEndPoint sender)
+    private void ProcessSinglePacket(string json, IPEndPoint sender, double arrivalTimestamp)
     {
         try
         {
             MessagePacket packet = JsonUtility.FromJson<MessagePacket>(json);
             if (packet != null && OnPacketReceived != null)
             {
-                // Simple validation to ignore old/corrupted packets
                 if (string.IsNullOrEmpty(packet.playerId)) return;
-
-                if (packet.type != PacketType.Ping)
-                    Debug.Log($"[UDP] Received {packet.type} from {sender}");
-
-                OnPacketReceived(packet, sender);
+                OnPacketReceived(packet, sender, arrivalTimestamp);
             }
         }
         catch (Exception e)
@@ -197,10 +192,14 @@ public class UDPManager : MonoBehaviour
                 
                 if (data != null && data.Length > 0)
                 {
-                    // Enqueue raw bytes to be parsed on the Main Thread
+                    double now = (double)Time.realtimeSinceStartup;
                     lock (queueLock)
                     {
-                        packetQueue.Enqueue(new PacketInfo { rawData = data, sender = remoteEP });
+                        packetQueue.Enqueue(new PacketInfo { 
+                            rawData = data, 
+                            sender = remoteEP, 
+                            arrivalTimestamp = now 
+                        });
                     }
                 }
             }

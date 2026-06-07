@@ -74,7 +74,7 @@ public class GameStateSyncManager : MonoBehaviour
     }
 
     // Handle received packets
-    private void HandlePacketReceived(MessagePacket packet, System.Net.IPEndPoint sender)
+    private void HandlePacketReceived(MessagePacket packet, System.Net.IPEndPoint sender, double arrivalTimestamp)
     {
         if (!string.IsNullOrEmpty(packet.roomId) && packet.roomId != mpManager.currentRoomId && packet.roomId != "Global")
             return;
