@@ -58,8 +58,7 @@ public class GameStateSyncManager : MonoBehaviour
         noteSpawner = FindFirstObjectByType<NoteSpawner>();
         
         hasSyncedStart = false;
-        if (serverNoteQueue != null) serverNoteQueue.Clear();
-        
+        // In flat structure, we don't have a serverNoteQueue class anymore, but we can still use a list of packets
         Debug.Log("GameStateSyncManager references refreshed.");
     }
 
@@ -68,14 +67,12 @@ public class GameStateSyncManager : MonoBehaviour
     {
         if (mpManager != null && mpManager.udpManager != null && mpManager.gameStarted)
         {
-            GameStateData gameStateData = new GameStateData(
-                rhythmGameManager.actualSongStartTime,
-                rhythmGameManager.songPosition,
-                rhythmGameManager.currentBeat,
-                rhythmGameManager.beatProgress
-            );
-            
-            MessagePacket packet = new MessagePacket(PacketType.SyncGameState, mpManager.localPlayerId, mpManager.currentRoomId, gameStateData);
+            MessagePacket packet = new MessagePacket(PacketType.SyncGameState, mpManager.localPlayerId, mpManager.currentRoomId);
+            packet.startTime = rhythmGameManager.actualSongStartTime;
+            packet.songPosition = rhythmGameManager.songPosition;
+            packet.currentBeat = rhythmGameManager.currentBeat;
+            packet.beatProgress = rhythmGameManager.beatProgress;
+
             mpManager.udpManager.SendPacket(packet);
         }
     }
@@ -107,12 +104,11 @@ public class GameStateSyncManager : MonoBehaviour
         // Don't process our own sync packets if we sent them
         if (packet.playerId == mpManager.localPlayerId) return;
 
-        GameStateData gameStateData = packet.GetData<GameStateData>();
-        if (gameStateData != null && rhythmGameManager != null)
+        if (rhythmGameManager != null)
         {
             // The server says: "At this exact moment (packet arrival), my songPosition is X"
             float currentTime = Time.time;
-            float serverSongPos = gameStateData.songPosition;
+            float serverSongPos = packet.songPosition;
             float calculatedStartTime = currentTime - serverSongPos;
 
             if (!hasSyncedStart)
@@ -133,23 +129,18 @@ public class GameStateSyncManager : MonoBehaviour
     {
         if (packet.playerId == mpManager.localPlayerId) return;
 
-        NoteData noteData = packet.GetData<NoteData>();
-        if (noteData != null)
-        {
-            serverNoteQueue.Add(noteData);
-            SpawnNoteForClient(noteData);
-        }
+        // In flat structure, note data is inside the packet fields
+        SpawnNoteForClient(packet);
     }
 
     // Process game start packet
     private void ProcessGameStartPacket(MessagePacket packet)
     {
-        serverNoteQueue.Clear();
         hasSyncedStart = false;
     }
 
     // Spawn note for client based on server's note data
-    private void SpawnNoteForClient(NoteData noteData)
+    private void SpawnNoteForClient(MessagePacket noteData)
     {
         if (noteSpawner == null)
         {
@@ -166,7 +157,7 @@ public class GameStateSyncManager : MonoBehaviour
         CreateClientNoteInstance(baseLane + 4, noteData);
     }
 
-    private void CreateClientNoteInstance(int laneIndex, NoteData noteData)
+    private void CreateClientNoteInstance(int laneIndex, MessagePacket noteData)
     {
         if (laneIndex >= noteSpawner.spawnPositions.Length || laneIndex >= noteSpawner.targetPositions.Length)
              return;
@@ -212,12 +203,12 @@ public class GameStateSyncManager : MonoBehaviour
     }
 
     // Send a note spawn event to the server for relay
-    public void SendNoteSpawn(NoteData noteData)
+    public void SendNoteSpawn(MessagePacket noteData)
     {
         if (mpManager != null && mpManager.udpManager != null)
         {
-            MessagePacket packet = new MessagePacket(PacketType.NoteSpawn, mpManager.localPlayerId, mpManager.currentRoomId, noteData);
-            mpManager.udpManager.SendPacket(packet);
+            // The noteData passed here is already a MessagePacket
+            mpManager.udpManager.SendPacket(noteData);
         }
     }
 

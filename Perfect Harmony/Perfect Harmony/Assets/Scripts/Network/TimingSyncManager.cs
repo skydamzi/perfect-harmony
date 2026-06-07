@@ -78,14 +78,11 @@ public class TimingSyncManager : MonoBehaviour
     {
         if (mpManager != null && mpManager.udpManager != null && !mpManager.IsAuthority)
         {
-            // Create sync data containing local timing information
-            SyncData syncData = new SyncData(
-                Time.time, // Current local time
-                rhythmGameManager != null ? rhythmGameManager.songPosition : 0f,
-                rhythmGameManager != null ? rhythmGameManager.currentBeat : 0
-            );
+            MessagePacket packet = new MessagePacket(PacketType.SyncTime, mpManager.localPlayerId, mpManager.currentRoomId);
+            packet.serverTime = Time.time;
+            packet.songPosition = rhythmGameManager != null ? rhythmGameManager.songPosition : 0f;
+            packet.currentBeat = rhythmGameManager != null ? rhythmGameManager.currentBeat : 0;
             
-            MessagePacket packet = new MessagePacket(PacketType.SyncTime, mpManager.localPlayerId, mpManager.currentRoomId, syncData);
             mpManager.udpManager.SendPacket(packet);
         }
     }
@@ -95,7 +92,7 @@ public class TimingSyncManager : MonoBehaviour
     {
         if (mpManager != null && mpManager.udpManager != null)
         {
-            MessagePacket packet = new MessagePacket(PacketType.Ping, mpManager.localPlayerId, mpManager.currentRoomId, null);
+            MessagePacket packet = new MessagePacket(PacketType.Ping, mpManager.localPlayerId, mpManager.currentRoomId);
             mpManager.udpManager.SendPacket(packet);
         }
     }
@@ -124,56 +121,45 @@ public class TimingSyncManager : MonoBehaviour
     // Process a sync packet from server
     private void ProcessSyncPacket(MessagePacket packet)
     {
-        SyncData syncData = packet.GetData<SyncData>();
-        if (syncData != null)
+        // Add to sync history (don't add our own)
+        if (packet.playerId != mpManager.localPlayerId)
         {
-            // Add to sync history (don't add our own)
-            if (packet.playerId != mpManager.localPlayerId)
+            SyncRecord record = new SyncRecord(Time.time, packet.serverTime, packet.songPosition, packet.currentBeat);
+            syncHistory.Add(record);
+            
+            // Keep only the latest sync records
+            if (syncHistory.Count > maxSyncHistory)
             {
-                SyncRecord record = new SyncRecord(Time.time, syncData.serverTime, syncData.serverSongPosition, syncData.serverBeat);
-                syncHistory.Add(record);
-                
-                // Keep only the latest sync records
-                if (syncHistory.Count > maxSyncHistory)
-                {
-                    syncHistory.RemoveAt(0);
-                }
-                
-                // Calculate time offset
-                CalculateTimeOffset();
-                
-                // Update server's current state
-                serverSongPosition = syncData.serverSongPosition;
-                serverCurrentBeat = syncData.serverBeat;
+                syncHistory.RemoveAt(0);
             }
             
-            // If we're the authority, broadcast this back to all clients in the room via server relay
-            if (mpManager.IsAuthority && packet.playerId != mpManager.localPlayerId)
-            {
-                // Update the sync data with current authority state
-                SyncData updatedSyncData = new SyncData(
-                    Time.time, // Authority's current time
-                    rhythmGameManager != null ? rhythmGameManager.songPosition : 0f,
-                    rhythmGameManager != null ? rhythmGameManager.currentBeat : 0
-                );
-                
-                MessagePacket responsePacket = new MessagePacket(PacketType.SyncTime, mpManager.localPlayerId, mpManager.currentRoomId, updatedSyncData);
-                mpManager.udpManager.SendPacket(responsePacket);
-            }
+            // Calculate time offset
+            CalculateTimeOffset();
+            
+            // Update server's current state
+            serverSongPosition = packet.songPosition;
+            serverCurrentBeat = packet.currentBeat;
+        }
+        
+        // If we're the authority, broadcast this back to all clients in the room via server relay
+        if (mpManager.IsAuthority && packet.playerId != mpManager.localPlayerId)
+        {
+            MessagePacket responsePacket = new MessagePacket(PacketType.SyncTime, mpManager.localPlayerId, mpManager.currentRoomId);
+            responsePacket.serverTime = Time.time;
+            responsePacket.songPosition = rhythmGameManager != null ? rhythmGameManager.songPosition : 0f;
+            responsePacket.currentBeat = rhythmGameManager != null ? rhythmGameManager.currentBeat : 0;
+            
+            mpManager.udpManager.SendPacket(responsePacket);
         }
     }
 
     // Process game state sync packet
     private void ProcessGameStatePacket(MessagePacket packet)
     {
-        GameStateData gameStateData = packet.GetData<GameStateData>();
-        if (gameStateData != null)
-        {
-            // Update local game state based on server's state
-            serverSongPosition = gameStateData.songPosition;
-            serverCurrentBeat = gameStateData.currentBeat;
-            serverSongStartTime = gameStateData.startTime;
-        }
+        // Update local game state based on server's state
+        serverSongPosition = packet.songPosition;
+        serverCurrentBeat = packet.currentBeat;
+        serverSongStartTime = packet.startTime;
     }
 
     // Process ping packet (Pong)
