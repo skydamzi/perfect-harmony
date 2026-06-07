@@ -16,42 +16,30 @@ app = FastAPI()
 # [1] 기존 채보 생성 로직 (HTTP 8000)
 # ==========================================
 
-# 피아노 샘플 (기존 지문 로직용)
 SAMPLE_PIANO = "piano.wav"
-
-# GPU 체크는 하되 메시지 수정
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"--- [시스템 안내] 감지된 장치: {device.upper()} (안정성을 위해 Demucs는 CPU 구동) ---")
 
 def get_normalized_fp(y, sr):
-    """기존 형이 만든 피아노 핑거프린트 함수"""
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_fft=2048, n_mfcc=40)
     mfcc_mean = np.mean(mfcc, axis=1)
     return (mfcc_mean - np.mean(mfcc_mean)) / (np.std(mfcc_mean) + 1e-9)
 
 def run_demucs_separation(audio_bytes):
-    """RTX 5070 호환성 해결을 위해 CPU 모드로 안전하게 찢는 함수"""
-    # 임시 파일로 저장 후 Demucs 실행
     with open("temp_input.wav", "wb") as f:
         f.write(audio_bytes)
-        
-    # demucs 4stem 분리 (drums, bass, vocals, other)
     print("-> Demucs AI 음원 분리 가동 중 (CPU 안정 모드)...")
     demucs_main(["-n", "htdemucs", "-d", "cpu", "temp_input.wav", "-o", "separated_out"])
-    
-    # 분리된 파일들 다시 로드
     base_path = "separated_out/htdemucs/temp_input/"
     y_drums, sr = librosa.load(f"{base_path}drums.wav", sr=None)
     y_bass, _ = librosa.load(f"{base_path}bass.wav", sr=sr)
     y_other, _ = librosa.load(f"{base_path}other.wav", sr=sr)
-    
     return y_drums, y_bass, y_other, sr
 
 @app.post("/generate-chart")
 async def generate_chart(file: UploadFile = File(...)):
     print(f"--- [RTX 5070 안정 밴드 모드] {file.filename} 분석 시작 ---")
     content = await file.read()
-    
     try:
         y_drums, y_bass, y_piano_raw, sr = run_demucs_separation(content)
     except Exception as e:
@@ -63,11 +51,8 @@ async def generate_chart(file: UploadFile = File(...)):
     if actual_tempo <= 0: actual_tempo = 120.0
 
     tracks = {"drums": [], "bass": [], "piano": []}
-
-    # [드럼 트랙 채보]
     onset_env_drums = librosa.onset.onset_strength(y=y_drums, sr=sr)
     peaks_drums = librosa.onset.onset_detect(onset_envelope=onset_env_drums, sr=sr, delta=0.2, wait=10)
-    
     for frame in peaks_drums:
         time_val = librosa.frames_to_time(frame, sr=sr)
         beat_val = float(time_val * (actual_tempo / 60))
@@ -75,11 +60,9 @@ async def generate_chart(file: UploadFile = File(...)):
         lane = 0 if np.argmax(stft) < 50 else 1
         tracks["drums"].append({"beatNumber": round(beat_val, 2), "lane": lane})
 
-    # [베이스 트랙 채보]
     chroma_bass = librosa.feature.chroma_stft(y=y_bass, sr=sr)
     onset_env_bass = librosa.onset.onset_strength(y=y_bass, sr=sr)
     peaks_bass = librosa.onset.onset_detect(onset_envelope=onset_env_bass, sr=sr, delta=0.15, wait=12)
-    
     for frame in peaks_bass:
         time_val = librosa.frames_to_time(frame, sr=sr)
         beat_val = float(time_val * (actual_tempo / 60))
@@ -87,7 +70,6 @@ async def generate_chart(file: UploadFile = File(...)):
         lane = int(pitch_idx % 4)
         tracks["bass"].append({"beatNumber": round(beat_val, 2), "lane": lane})
 
-    # [피아노 트랙 채보]
     try:
         y_p, _ = librosa.load(SAMPLE_PIANO, sr=sr)
         fp_piano = get_normalized_fp(y_p, sr)
@@ -95,7 +77,6 @@ async def generate_chart(file: UploadFile = File(...)):
         onset_env_piano = librosa.onset.onset_strength(y=y_piano_raw, sr=sr)
         peaks_piano = librosa.onset.onset_detect(onset_envelope=onset_env_piano, sr=sr, delta=0.14, wait=15)
         mfcc_full = librosa.feature.mfcc(y=y_piano_raw, sr=sr, n_mfcc=40)
-        
         for frame in peaks_piano:
             current_fp = mfcc_full[:, frame]
             current_fp_norm = (current_fp - np.mean(current_fp)) / (np.std(current_fp) + 1e-9)
@@ -108,7 +89,6 @@ async def generate_chart(file: UploadFile = File(...)):
                 tracks["piano"].append({"beatNumber": round(beat_val, 2), "lane": lane})
     except Exception: pass
 
-    # 후처리
     for instrument in tracks:
         tracks[instrument].sort(key=lambda x: x["beatNumber"])
         final_list = []
@@ -119,7 +99,7 @@ async def generate_chart(file: UploadFile = File(...)):
                     final_list.append(tracks[instrument][i])
         tracks[instrument] = final_list
 
-    print(f"--- 채보 완료! 드럼: {len(tracks['drums'])}개, 베이스: {len(tracks['bass'])}개, 피아노: {len(tracks['piano'])}개 ---")
+    print(f"--- 채보 완료! ---")
     return {"beatsPerMinute": round(actual_tempo, 2), "tracks": tracks}
 
 # ==========================================
@@ -153,21 +133,20 @@ class UDPRelayProtocol(asyncio.DatagramProtocol):
                 self.transport.sendto(data, addr)
                 self.broadcast(room_id, data, exclude_id=player_id)
 
-            elif p_type == 2: # Ping (동기화 핵심)
-                packet["relayTimestamp"] = time.time() # 실시간 시각 주입
-                self.transport.sendto(json.dumps(packet).encode('utf-8'), addr)
-
             elif p_type == 5: # GameStart
-                # Broadcasted packets should NOT use relayTimestamp for clock sync to avoid jitter
-                asyncio.create_task(self.reliable_broadcast(room_id, data))
+                # 반복 전송 시마다 시각을 새로 찍기 위해 패킷 딕셔너리 전달
+                asyncio.create_task(self.reliable_broadcast(room_id, packet))
 
             elif p_type in (1, 4): # Disconnect
                 if room_id in self.rooms and player_id in self.rooms[room_id].clients:
                     del self.rooms[room_id].clients[player_id]
                     self.broadcast(room_id, data, exclude_id=player_id)
 
-            else: # 기타 모든 패킷
-                self.broadcast(room_id, data, exclude_id=player_id)
+            else: # Ping (2) 및 기타 중계
+                packet["relayTimestamp"] = time.time()
+                updated_data = json.dumps(packet).encode('utf-8')
+                if p_type == 2: self.transport.sendto(updated_data, addr)
+                else: self.broadcast(room_id, updated_data, exclude_id=player_id)
 
         except Exception as e: print(f"-> [UDP] Error: {e}")
 
@@ -176,8 +155,10 @@ class UDPRelayProtocol(asyncio.DatagramProtocol):
             for pid, addr in self.rooms[room_id].clients.items():
                 if pid != exclude_id: self.transport.sendto(data, addr)
 
-    async def reliable_broadcast(self, room_id, data, count=5):
+    async def reliable_broadcast(self, room_id, packet, count=5):
         for _ in range(count):
+            packet["relayTimestamp"] = time.time() # 매번 신선한 시각 주입
+            data = json.dumps(packet).encode('utf-8')
             self.broadcast(room_id, data)
             await asyncio.sleep(0.1)
 

@@ -35,6 +35,12 @@ public class TimingSyncManager : MonoBehaviour
         InvokeRepeating("SendPingPacket", 0f, 1.0f);
     }
 
+    public void RefreshReferences()
+    {
+        mpManager = FindFirstObjectByType<MultiplayerManager>();
+        rhythmGameManager = FindFirstObjectByType<RhythmGameManager>();
+    }
+
     private void SendPingPacket()
     {
         if (mpManager != null && mpManager.udpManager != null)
@@ -48,9 +54,8 @@ public class TimingSyncManager : MonoBehaviour
     {
         if (!string.IsNullOrEmpty(p.roomId) && p.roomId != mpManager.currentRoomId && p.roomId != "Global") return;
 
-        // [핵심 수정] 오직 핑(Ping) 패킷에 담긴 서버 시각으로만 동기화 수행
-        // GameStart처럼 반복 전송되는 패킷에 담긴 타임스탬프는 지연 오차가 발생하므로 무시함
-        if (p.type == PacketType.Ping && p.relayTimestamp > 0)
+        // [핵심] 타임스탬프가 있는 모든 패킷으로 즉시 동기화 수행
+        if (p.relayTimestamp > 0)
         {
             ProcessPrecisionSync(p);
         }
@@ -60,16 +65,16 @@ public class TimingSyncManager : MonoBehaviour
     {
         double localRecvTime = (double)Time.realtimeSinceStartup;
         
-        // RTT 계산 (시스템 틱 기준)
+        // RTT 계산 (왕복 시간)
         double rtt = (double)(System.DateTime.UtcNow.Ticks - p.systemTimestamp) / 10000000.0;
         packetExchangeLatency = (float)(rtt * 1000.0);
 
-        // NTP 공식 적용
+        // NTP 공식 적용: Offset = (ServerTime + RTT/2) - LocalTime
         double estimatedServerNow = p.relayTimestamp + (rtt / 2.0);
         double currentOffset = estimatedServerNow - localRecvTime;
 
         offsetHistory.Add(currentOffset);
-        if (offsetHistory.Count > 15) offsetHistory.RemoveAt(0); // 샘플 수 증가 (안정성)
+        if (offsetHistory.Count > 10) offsetHistory.RemoveAt(0);
 
         double sum = 0;
         foreach (double o in offsetHistory) sum += o;
