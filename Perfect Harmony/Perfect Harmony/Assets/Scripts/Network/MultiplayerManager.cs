@@ -149,8 +149,7 @@ public class MultiplayerManager : MonoBehaviour
 
     private void SendSyncStart(float networkStartTime)
     {
-        SyncData data = new SyncData(networkStartTime, 0, 0);
-        MessagePacket packet = new MessagePacket(PacketType.GameStart, localPlayerId, currentRoomId, data);
+        MessagePacket packet = MessagePacket.CreateSyncStartPacket(localPlayerId, currentRoomId, networkStartTime);
         udpManager.SendPacket(packet);
         
         // Local start
@@ -266,7 +265,7 @@ public class MultiplayerManager : MonoBehaviour
             // JoinRoom 패킷을 받았을 때만 응답 (무한 루프 방지 위해 Connect 타입으로 응답)
             if (packet.type == PacketType.JoinRoom)
             {
-                MessagePacket replyPacket = new MessagePacket(PacketType.Connect, localPlayerId, currentRoomId, null);
+                MessagePacket replyPacket = new MessagePacket(PacketType.Connect, localPlayerId, currentRoomId);
                 udpManager.SendPacket(replyPacket);
                 Debug.Log($"Sent discovery reply to new player: {packet.playerId}");
             }
@@ -288,14 +287,10 @@ public class MultiplayerManager : MonoBehaviour
     {
         if (packet.playerId == localPlayerId) return;
 
-        PlayerInputData inputData = packet.GetData<PlayerInputData>();
-        if (inputData != null)
+        MultiplayerInputHandler mpInputHandler = FindFirstObjectByType<MultiplayerInputHandler>();
+        if (mpInputHandler != null)
         {
-            MultiplayerInputHandler mpInputHandler = FindFirstObjectByType<MultiplayerInputHandler>();
-            if (mpInputHandler != null)
-            {
-                mpInputHandler.ProcessRemoteInput(inputData.lane, inputData.inputTime, packet.playerId);
-            }
+            mpInputHandler.ProcessRemoteInput(packet.lane, packet.hitTime, packet.playerId);
         }
     }
 
@@ -304,16 +299,15 @@ public class MultiplayerManager : MonoBehaviour
     {
         if (packet.playerId == localPlayerId) return;
 
-        PlayerScoreData scoreData = packet.GetData<PlayerScoreData>();
-        if (scoreData != null && connectedPlayers.ContainsKey(packet.playerId))
+        if (connectedPlayers.ContainsKey(packet.playerId))
         {
-            connectedPlayers[packet.playerId].score = scoreData.score;
-            connectedPlayers[packet.playerId].combo = scoreData.combo;
+            connectedPlayers[packet.playerId].score = packet.score;
+            connectedPlayers[packet.playerId].combo = packet.combo;
 
             MultiplayerInputHandler mpInputHandler = FindFirstObjectByType<MultiplayerInputHandler>();
             if (mpInputHandler != null)
             {
-                mpInputHandler.HandleRemoteScoreUpdate(packet.playerId, scoreData.score, scoreData.combo, scoreData.timingResult);
+                mpInputHandler.HandleRemoteScoreUpdate(packet.playerId, packet.score, packet.combo, (TimingResult)packet.timingResult);
             }
         }
     }
@@ -350,11 +344,10 @@ public class MultiplayerManager : MonoBehaviour
         }
 
         // 2. Synchronized rhythm start logic (if already in scene)
-        SyncData syncData = packet.GetData<SyncData>();
-        if (syncData != null && syncData.serverTime > 0)
+        if (packet.serverTime > 0)
         {
-            Debug.Log($"Received Synchronized Start signal. Starting in {syncData.serverTime - TimingSyncManager.Instance.GetAdjustedServerTime()}s");
-            ProcessSyncStart(syncData.serverTime);
+            Debug.Log($"Received Synchronized Start signal. Starting in {packet.serverTime - TimingSyncManager.Instance.GetAdjustedServerTime()}s");
+            ProcessSyncStart(packet.serverTime);
         }
     }
 
@@ -370,14 +363,10 @@ public class MultiplayerManager : MonoBehaviour
     {
         if (packet.playerId == localPlayerId) return;
 
-        NoteHitData hitData = packet.GetData<NoteHitData>();
-        if (hitData != null)
+        MultiplayerInputHandler mpInputHandler = FindFirstObjectByType<MultiplayerInputHandler>();
+        if (mpInputHandler != null)
         {
-            MultiplayerInputHandler mpInputHandler = FindFirstObjectByType<MultiplayerInputHandler>();
-            if (mpInputHandler != null)
-            {
-                mpInputHandler.HandleRemoteNoteHit(hitData.lane, hitData.timingResult);
-            }
+            mpInputHandler.HandleRemoteNoteHit(packet.lane, (TimingResult)packet.timingResult);
         }
     }
 
@@ -398,22 +387,22 @@ public class MultiplayerManager : MonoBehaviour
         // Add local player back
         connectedPlayers.Add(localPlayerId, new PlayerData(localPlayerId, "Player_Local"));
 
-        MessagePacket packet = new MessagePacket(PacketType.JoinRoom, localPlayerId, currentRoomId, null);
+        MessagePacket packet = new MessagePacket(PacketType.JoinRoom, localPlayerId, currentRoomId);
         udpManager.SendPacket(packet);
         Debug.Log($"Sending JoinRoom request for: {roomId}");
     }
 
     public void SendPlayerInput(int lane, float inputTime)
     {
-        PlayerInputData inputData = new PlayerInputData(lane, inputTime);
-        MessagePacket packet = new MessagePacket(PacketType.PlayerInput, localPlayerId, currentRoomId, inputData);
+        MessagePacket packet = new MessagePacket(PacketType.PlayerInput, localPlayerId, currentRoomId);
+        packet.lane = lane;
+        packet.hitTime = inputTime;
         udpManager.SendPacket(packet);
     }
 
     public void SendPlayerScore(int score, int combo, TimingResult timingResult)
     {
-        PlayerScoreData scoreData = new PlayerScoreData(score, combo, timingResult);
-        MessagePacket packet = new MessagePacket(PacketType.PlayerScore, localPlayerId, currentRoomId, scoreData);
+        MessagePacket packet = MessagePacket.CreateScorePacket(localPlayerId, currentRoomId, score, combo, (int)timingResult);
         udpManager.SendPacket(packet);
     }
 
@@ -424,7 +413,7 @@ public class MultiplayerManager : MonoBehaviour
             connectedPlayers[localPlayerId].isReady = true;
         }
 
-        MessagePacket packet = new MessagePacket(PacketType.PlayerReady, localPlayerId, currentRoomId, null);
+        MessagePacket packet = new MessagePacket(PacketType.PlayerReady, localPlayerId, currentRoomId);
         udpManager.SendPacket(packet);
     }
 
@@ -436,15 +425,14 @@ public class MultiplayerManager : MonoBehaviour
         }
 
         // Use PlayerReady packet type to signal chart is ready
-        MessagePacket packet = new MessagePacket(PacketType.PlayerReady, localPlayerId, currentRoomId, null);
+        MessagePacket packet = new MessagePacket(PacketType.PlayerReady, localPlayerId, currentRoomId);
         udpManager.SendPacket(packet);
         Debug.Log("Sent ChartReady signal to other players.");
     }
 
     public void SendNoteHit(int lane, TimingResult result)
     {
-        NoteHitData data = new NoteHitData(lane, result, Time.time);
-        MessagePacket packet = new MessagePacket(PacketType.NoteHit, localPlayerId, currentRoomId, data);
+        MessagePacket packet = MessagePacket.CreateHitPacket(localPlayerId, currentRoomId, lane, (int)result, Time.time);
         udpManager.SendPacket(packet);
     }
 

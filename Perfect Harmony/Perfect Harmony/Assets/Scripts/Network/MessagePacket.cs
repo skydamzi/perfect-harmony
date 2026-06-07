@@ -6,50 +6,50 @@ public class MessagePacket
 {
     public PacketType type;
     public string playerId;
-    public string roomId; // Added for central server routing
+    public string roomId;
     public float timestamp;
-    public long systemTimestamp; // High-precision timestamp in ticks
-    public string payload; // Serialized JSON string of the data object
     
-    public MessagePacket(PacketType type, string playerId, object data)
-    {
-        this.type = type;
-        this.playerId = playerId;
-        this.roomId = "";
-        this.timestamp = Time.time;
-        this.systemTimestamp = System.DateTime.UtcNow.Ticks;
-        
-        if (data != null)
-        {
-            this.payload = JsonUtility.ToJson(data);
-        }
-        else
-        {
-            this.payload = "";
-        }
-    }
-
-    public MessagePacket(PacketType type, string playerId, string roomId, object data)
+    // Flattened data fields to avoid nested JSON strings
+    public int lane;
+    public int score;
+    public int combo;
+    public int timingResult;
+    public float hitTime;
+    public float serverTime; // Used for sync
+    
+    public MessagePacket(PacketType type, string playerId, string roomId)
     {
         this.type = type;
         this.playerId = playerId;
         this.roomId = roomId;
         this.timestamp = Time.time;
-        this.systemTimestamp = System.DateTime.UtcNow.Ticks;
-        
-        if (data != null)
-        {
-            this.payload = JsonUtility.ToJson(data);
-        }
-        else
-        {
-            this.payload = "";
-        }
     }
-    
-    public T GetData<T>()
+
+    // Helper method to create a score packet
+    public static MessagePacket CreateScorePacket(string playerId, string roomId, int score, int combo, int result)
     {
-        if (string.IsNullOrEmpty(payload)) return default(T);
-        return JsonUtility.FromJson<T>(payload);
+        MessagePacket p = new MessagePacket(PacketType.PlayerScore, playerId, roomId);
+        p.score = score;
+        p.combo = combo;
+        p.timingResult = result;
+        return p;
+    }
+
+    // Helper method to create a hit packet
+    public static MessagePacket CreateHitPacket(string playerId, string roomId, int lane, int result, float hitTime)
+    {
+        MessagePacket p = new MessagePacket(PacketType.NoteHit, playerId, roomId);
+        p.lane = lane;
+        p.timingResult = result;
+        p.hitTime = hitTime;
+        return p;
+    }
+
+    // Helper method to create a sync start packet
+    public static MessagePacket CreateSyncStartPacket(string playerId, string roomId, float serverStartTime)
+    {
+        MessagePacket p = new MessagePacket(PacketType.GameStart, playerId, roomId);
+        p.serverTime = serverStartTime;
+        return p;
     }
 }
