@@ -10,13 +10,21 @@ public class GameStarter : MonoBehaviour
         RunAutoSetup();
     }
 
-    // 서버 분석이 완료되면 ChartManager에서 이 함수를 호출함
+    // 서버 분석이 완료되면 ChartManager(ChartRequester)에서 이 함수를 호출함
     public void StartGameAfterAnalysis()
     {
-        if (RhythmGameManager.Instance != null)
+        MultiplayerManager mpManager = FindFirstObjectByType<MultiplayerManager>();
+        if (mpManager != null && mpManager.gameStarted)
         {
+            // 멀티플레이어인 경우: 서버에 내 채보 분석이 끝났음을 알리고 모두가 준비될 때까지 대기
+            mpManager.SendChartReady();
+            Debug.Log("<color=cyan>채보 분석 완료! 다른 플레이어의 준비를 기다립니다...</color>");
+        }
+        else if (RhythmGameManager.Instance != null)
+        {
+            // 싱글플레이어인 경우: 기존처럼 즉시 카운트다운 시작
             RhythmGameManager.Instance.StartCountdown();
-            Debug.Log("<color=green>서버 채보 로드 완료! 카운트다운 시작!</color>");
+            Debug.Log("<color=green>채보 로드 완료! 카운트다운 시작!</color>");
         }
         else
         {

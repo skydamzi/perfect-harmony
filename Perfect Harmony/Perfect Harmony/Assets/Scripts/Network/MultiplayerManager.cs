@@ -50,6 +50,7 @@ public class MultiplayerManager : MonoBehaviour
         public int score;
         public int combo;
         public bool isReady;
+        public bool isChartReady; // Added: Track if chart analysis is done
         
         public PlayerData(string id, string name)
         {
@@ -58,6 +59,7 @@ public class MultiplayerManager : MonoBehaviour
             score = 0;
             combo = 0;
             isReady = false;
+            isChartReady = false;
         }
     }
 
@@ -113,6 +115,54 @@ public class MultiplayerManager : MonoBehaviour
             Debug.Log("Executing pending scene load: Playing");
             SceneManager.LoadScene("Playing");
         }
+
+        // Host logic: Check if everyone is chart ready and trigger countdown
+        if (IsAuthority && gameStarted && SceneManager.GetActiveScene().name == "Playing")
+        {
+            CheckAllPlayersChartReady();
+        }
+    }
+
+    private bool countdownTriggered = false;
+    private void CheckAllPlayersChartReady()
+    {
+        if (countdownTriggered) return;
+
+        bool allReady = true;
+        foreach (var p in connectedPlayers.Values)
+        {
+            if (!p.isChartReady)
+            {
+                allReady = false;
+                break;
+            }
+        }
+
+        if (allReady && connectedPlayers.Count >= 2)
+        {
+            countdownTriggered = true;
+            // Everyone is ready! Sync start in 2 seconds
+            float syncStartTime = TimingSyncManager.Instance.GetAdjustedServerTime() + 2.0f;
+            SendSyncStart(syncStartTime);
+        }
+    }
+
+    private void SendSyncStart(float networkStartTime)
+    {
+        SyncData data = new SyncData(networkStartTime, 0, 0);
+        MessagePacket packet = new MessagePacket(PacketType.GameStart, localPlayerId, currentRoomId, data);
+        udpManager.SendPacket(packet);
+        
+        // Local start
+        ProcessSyncStart(networkStartTime);
+    }
+
+    private void ProcessSyncStart(float networkStartTime)
+    {
+        if (RhythmGameManager.Instance != null)
+        {
+            RhythmGameManager.Instance.StartCountdownSync(networkStartTime);
+        }
     }
 
     [Header("Debug Info")]
@@ -121,7 +171,7 @@ public class MultiplayerManager : MonoBehaviour
 
     private void OnGUI()
     {
-        GUILayout.BeginArea(new Rect(10, 10, 300, 500));
+        GUILayout.BeginArea(new Rect(10, 10, 300, 550));
         GUILayout.Box("Central Server Multiplayer");
         GUILayout.Label($"Local ID: {localPlayerId}");
         GUILayout.Label($"Room: {currentRoomId}");
@@ -131,7 +181,8 @@ public class MultiplayerManager : MonoBehaviour
         GUILayout.Label("Room Players:");
         foreach(var p in connectedPlayers.Values)
         {
-            GUILayout.Label($"- {p.playerId.Substring(0, 8)}... : Ready={p.isReady}, Score={p.score}");
+            string status = p.isChartReady ? "Chart OK" : (p.isReady ? "Ready" : "Waiting");
+            GUILayout.Label($"- {p.playerId.Substring(0, 8)}... : {status}, Score={p.score}");
         }
 
         GUILayout.Space(10);
@@ -140,6 +191,7 @@ public class MultiplayerManager : MonoBehaviour
         if (TimingSyncManager.Instance != null)
         {
             GUILayout.Label($"Server Latency: {TimingSyncManager.Instance.packetExchangeLatency:F1} ms");
+            GUILayout.Label($"Server Time: {TimingSyncManager.Instance.GetAdjustedServerTime():F2}");
         }
 
         if (GUILayout.Button("Force Load 'Playing' Scene"))
@@ -271,18 +323,30 @@ public class MultiplayerManager : MonoBehaviour
     {
         if (connectedPlayers.ContainsKey(packet.playerId))
         {
-            connectedPlayers[packet.playerId].isReady = true;
-            Debug.Log($"Player {packet.playerId} is ready in room {currentRoomId}");
+            connectedPlayers[packet.playerId].isChartReady = true; // Use this for chart analysis ready
+            Debug.Log($"Player {packet.playerId} chart is ready in room {currentRoomId}");
         }
     }
 
     // Handle game start command from the central server
     private void HandleGameStart(MessagePacket packet)
     {
-        if (gameStarted || pendingSceneLoad) return;
+        // 1. Scene load logic (if not started)
+        if (!gameStarted && !pendingSceneLoad)
+        {
+            Debug.Log($"Received GameStart from server for room {currentRoomId}. Scheduling scene load.");
+            pendingSceneLoad = true;
+            countdownTriggered = false; // Reset for new game
+            return;
+        }
 
-        Debug.Log($"Received GameStart from server for room {currentRoomId}. Scheduling scene load.");
-        pendingSceneLoad = true;
+        // 2. Synchronized rhythm start logic (if already in scene)
+        SyncData syncData = packet.GetData<SyncData>();
+        if (syncData != null && syncData.serverTime > 0)
+        {
+            Debug.Log($"Received Synchronized Start signal. Starting in {syncData.serverTime - TimingSyncManager.Instance.GetAdjustedServerTime()}s");
+            ProcessSyncStart(syncData.serverTime);
+        }
     }
 
     // Handle game stop command
@@ -290,6 +354,7 @@ public class MultiplayerManager : MonoBehaviour
     {
         Debug.Log("Game stopped by server");
         gameStarted = false;
+        countdownTriggered = false;
     }
 
     private void HandleNoteHit(MessagePacket packet)
@@ -352,6 +417,19 @@ public class MultiplayerManager : MonoBehaviour
 
         MessagePacket packet = new MessagePacket(PacketType.PlayerReady, localPlayerId, currentRoomId, null);
         udpManager.SendPacket(packet);
+    }
+
+    public void SendChartReady()
+    {
+        if (connectedPlayers.ContainsKey(localPlayerId))
+        {
+            connectedPlayers[localPlayerId].isChartReady = true;
+        }
+
+        // Use PlayerReady packet type to signal chart is ready
+        MessagePacket packet = new MessagePacket(PacketType.PlayerReady, localPlayerId, currentRoomId, null);
+        udpManager.SendPacket(packet);
+        Debug.Log("Sent ChartReady signal to other players.");
     }
 
     public void SendNoteHit(int lane, TimingResult result)

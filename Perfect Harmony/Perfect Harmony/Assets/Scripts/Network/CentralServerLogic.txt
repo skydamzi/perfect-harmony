@@ -1,0 +1,232 @@
+import asyncio
+import json
+from typing import Dict, Tuple
+from fastapi import FastAPI, UploadFile, File
+import librosa
+import numpy as np
+import io
+import torch
+import soundfile as sf
+from demucs.separate import main as demucs_main
+
+app = FastAPI()
+
+# ==========================================
+# [1] 기존 채보 생성 로직 (HTTP 8000)
+# ==========================================
+
+# 피아노 샘플 (기존 지문 로직용)
+SAMPLE_PIANO = "piano.wav"
+
+# GPU 체크는 하되 메시지 수정
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"--- [시스템 안내] 감지된 장치: {device.upper()} (안정성을 위해 Demucs는 CPU 구동) ---")
+
+def get_normalized_fp(y, sr):
+    """기존 형이 만든 피아노 핑거프린트 함수"""
+    mfcc = librosa.feature.mfcc(y=y, sr=sr, n_fft=2048, n_mfcc=40)
+    mfcc_mean = np.mean(mfcc, axis=1)
+    return (mfcc_mean - np.mean(mfcc_mean)) / (np.std(mfcc_mean) + 1e-9)
+
+def run_demucs_separation(audio_bytes):
+    """RTX 5070 호환성 해결을 위해 CPU 모드로 안전하게 찢는 함수"""
+    # 임시 파일로 저장 후 Demucs 실행
+    with open("temp_input.wav", "wb") as f:
+        f.write(audio_bytes)
+        
+    # demucs 4stem 분리 (drums, bass, vocals, other)
+    # 형 글카(sm_120) 에러 방지를 위해 강제로 "-d", "cpu" 전달!!!
+    print("-> Demucs AI 음원 분리 가동 중 (CPU 안정 모드)...")
+    demucs_main(["-n", "htdemucs", "-d", "cpu", "temp_input.wav", "-o", "separated_out"])
+    
+    # 분리된 파일들 다시 로드 (Demucs 기본 내부 sr은 44100임)
+    base_path = "separated_out/htdemucs/temp_input/"
+    y_drums, sr = librosa.load(f"{base_path}drums.wav", sr=None)
+    y_bass, _ = librosa.load(f"{base_path}bass.wav", sr=sr)
+    y_other, _ = librosa.load(f"{base_path}other.wav", sr=sr) # 피아노/기타 등등 섞인 트랙
+    
+    return y_drums, y_bass, y_other, sr
+
+@app.post("/generate-chart")
+async def generate_chart(file: UploadFile = File(...)):
+    print(f"--- [RTX 5070 안정 밴드 모드] {file.filename} 분석 시작 ---")
+    content = await file.read()
+    
+    # 1. AI 음원 분리 (CPU 강제 징집으로 에러 원천 차단)
+    try:
+        y_drums, y_bass, y_piano_raw, sr = run_demucs_separation(content)
+    except Exception as e:
+        print(f"음원 분리 실패: {e}")
+        return {"error": f"Source separation failed: {str(e)}"}
+    
+    # 2. 공통 BPM 분석 (원본 비트로 기준점 잡기)
+    tempo, _ = librosa.beat.beat_track(y=y_drums, sr=sr) # 드럼 트랙으로 잡는 게 직빵임
+    actual_tempo = float(tempo[0]) if isinstance(tempo, np.ndarray) else float(tempo)
+    if actual_tempo <= 0: actual_tempo = 120.0
+
+    tracks = {"drums": [], "bass": [], "piano": []}
+
+    # ==========================================
+    # 3. [드럼 트랙 채보] - 온셋 에너지 기반
+    # ==========================================
+    onset_env_drums = librosa.onset.onset_strength(y=y_drums, sr=sr)
+    peaks_drums = librosa.onset.onset_detect(onset_envelope=onset_env_drums, sr=sr, delta=0.2, wait=10)
+    
+    for frame in peaks_drums:
+        time = librosa.frames_to_time(frame, sr=sr)
+        beat_val = float(time * (actual_tempo / 60))
+        # 야매로 주파수 분석해서 킥(낮은음) / 스네어(높은음) 레인 분배
+        stft = np.abs(librosa.stft(y_drums[frame*512 : frame*512 + 2048]))
+        lane = 0 if np.argmax(stft) < 50 else 1 # 대충 저음이면 0번, 고음이면 1번 레인
+        tracks["drums"].append({"beatNumber": round(beat_val, 2), "lane": lane})
+
+    # ==========================================
+    # 4. [베이스 트랙 채보] - 저음역 크로마 분석
+    # ==========================================
+    chroma_bass = librosa.feature.chroma_stft(y=y_bass, sr=sr)
+    onset_env_bass = librosa.onset.onset_strength(y=y_bass, sr=sr)
+    peaks_bass = librosa.onset.onset_detect(onset_envelope=onset_env_bass, sr=sr, delta=0.15, wait=12)
+    
+    for frame in peaks_bass:
+        time = librosa.frames_to_time(frame, sr=sr)
+        beat_val = float(time * (actual_tempo / 60))
+        pitch_idx = np.argmax(chroma_bass[:, frame])
+        lane = int(pitch_idx % 4) # 4개 레인 멀티 배정
+        tracks["bass"].append({"beatNumber": round(beat_val, 2), "lane": lane})
+
+    # ==========================================
+    # 5. [피아노 트랙 채보] - 형이 만든 기존 로직 그대로 적용!
+    # ==========================================
+    try:
+        y_p, _ = librosa.load(SAMPLE_PIANO, sr=sr)
+        fp_piano = get_normalized_fp(y_p, sr)
+        
+        chroma_piano = librosa.feature.chroma_stft(y=y_piano_raw, sr=sr)
+        onset_env_piano = librosa.onset.onset_strength(y=y_piano_raw, sr=sr)
+        peaks_piano = librosa.onset.onset_detect(onset_envelope=onset_env_piano, sr=sr, delta=0.14, wait=15)
+        mfcc_full = librosa.feature.mfcc(y=y_piano_raw, sr=sr, n_mfcc=40)
+        
+        for frame in peaks_piano:
+            current_fp = mfcc_full[:, frame]
+            current_fp_norm = (current_fp - np.mean(current_fp)) / (np.std(current_fp) + 1e-9)
+            sim_p = np.dot(fp_piano, current_fp_norm) / (np.linalg.norm(fp_piano) * np.linalg.norm(current_fp_norm) + 1e-9)
+            
+            current_chroma = chroma_piano[:, frame]
+            chroma_strength = np.max(current_chroma)
+
+            if sim_p > 0.82 or (sim_p > 0.75 and chroma_strength > 0.85):
+                time = librosa.frames_to_time(frame, sr=sr)
+                beat_val = float(time * (actual_tempo / 60))
+                pitch_idx = np.argmax(current_chroma)
+                lane = int(pitch_idx // 3)
+                tracks["piano"].append({"beatNumber": round(beat_val, 2), "lane": lane})
+    except Exception as e:
+        print(f"피아노 채보 실패 (샘플 확인 요망): {e}")
+
+    # 6. 후처리 (악기별 박자 정렬 및 중복노트 제거)
+    for instrument in tracks:
+        tracks[instrument].sort(key=lambda x: x["beatNumber"])
+        final_list = []
+        if tracks[instrument]:
+            final_list.append(tracks[instrument][0])
+            for i in range(1, len(tracks[instrument])):
+                diff = tracks[instrument][i]["beatNumber"] - final_list[-1]["beatNumber"]
+                if diff > 0.25: # 연타 방지 컷오프
+                    final_list.append(tracks[instrument][i])
+        tracks[instrument] = final_list
+
+    print(f"--- 채보 완료! 드럼: {len(tracks['drums'])}개, 베이스: {len(tracks['bass'])}개, 피아노: {len(tracks['piano'])}개 ---")
+    
+    return {
+        "beatsPerMinute": round(actual_tempo, 2),
+        "tracks": tracks
+    }
+
+# ==========================================
+# [2] 새로운 UDP 멀티플레이 중계 서버 로직 (UDP 8080)
+# ==========================================
+
+class Room:
+    def __init__(self, room_id: str):
+        self.room_id = room_id
+        # playerId: (ip, port)
+        self.clients: Dict[str, Tuple[str, int]] = {}
+
+class UDPRelayProtocol(asyncio.DatagramProtocol):
+    def __init__(self):
+        self.rooms: Dict[str, Room] = {}
+        self.transport = None
+
+    def connection_made(self, transport):
+        self.transport = transport
+        print("-> [UDP] 멀티플레이 중계 서버가 포트 8080에서 가동되었습니다.")
+
+    def datagram_received(self, data, addr):
+        try:
+            # 유니티에서 보낸 JSON 파싱
+            packet_str = data.decode('utf-8')
+            packet = json.loads(packet_str)
+            
+            p_type = packet.get("type")
+            player_id = packet.get("playerId")
+            room_id = packet.get("roomId", "Lobby")
+
+            # [A] 접속 및 방 참가 (Connect: 0, JoinRoom: 3)
+            if p_type in (0, 3):
+                if room_id not in self.rooms:
+                    self.rooms[room_id] = Room(room_id)
+                
+                self.rooms[room_id].clients[player_id] = addr
+                self.transport.sendto(data, addr)
+                self.broadcast(room_id, data, exclude_id=player_id)
+                print(f"-> [UDP] [{room_id}] 유저 접속: {player_id} ({addr})")
+
+            # [B] 핑 (Ping: 2)
+            elif p_type == 2:
+                self.transport.sendto(data, addr)
+
+            # [C] 게임 시작 (GameStart: 5)
+            elif p_type == 5:
+                print(f"-> [UDP] [{room_id}] 게임 시작 신호 수신 (By {player_id})")
+                asyncio.create_task(self.reliable_broadcast(room_id, data))
+
+            # [D] 퇴장 (Disconnect: 1, LeaveRoom: 4)
+            elif p_type in (1, 4):
+                if room_id in self.rooms and player_id in self.rooms[room_id].clients:
+                    del self.rooms[room_id].clients[player_id]
+                    self.broadcast(room_id, data, exclude_id=player_id)
+                    if not self.rooms[room_id].clients:
+                        del self.rooms[room_id]
+                print(f"-> [UDP] [{room_id}] 유저 퇴장: {player_id}")
+
+            # [E] 일반 중계 (나머지 모든 패킷)
+            else:
+                self.broadcast(room_id, data, exclude_id=player_id)
+
+        except Exception as e:
+            print(f"-> [UDP] 패킷 처리 오류: {e}")
+
+    def broadcast(self, room_id, data, exclude_id=None):
+        if room_id in self.rooms:
+            for pid, addr in self.rooms[room_id].clients.items():
+                if pid != exclude_id:
+                    self.transport.sendto(data, addr)
+
+    async def reliable_broadcast(self, room_id, data, count=5):
+        for _ in range(count):
+            self.broadcast(room_id, data)
+            await asyncio.sleep(0.1)
+
+# --- FastAPI 구동 시 UDP 서버 함께 실행 ---
+
+@app.on_event("startup")
+async def startup_event():
+    loop = asyncio.get_running_loop()
+    await loop.create_datagram_endpoint(
+        lambda: UDPRelayProtocol(),
+        local_addr=("0.0.0.0", 8080)
+    )
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

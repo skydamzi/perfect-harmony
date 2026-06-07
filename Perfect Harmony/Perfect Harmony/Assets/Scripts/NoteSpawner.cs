@@ -67,12 +67,14 @@ public class NoteSpawner : MonoBehaviour
 
         int baseLaneIndex = (int)spawnEvent.lane;
 
-        // Player 1, 2 동시에 소환
+        // Player 1, 2 동시에 소환 (각자 로컬에서 처리)
         CreateNoteInstance(baseLaneIndex, spawnEvent);
         int p2LaneIndex = baseLaneIndex + 4;
         CreateNoteInstance(p2LaneIndex, spawnEvent);
 
-        // 멀티플레이어 동기화 로직
+        // [수정] 이제 시간이 완벽하게 동기화되므로, 노트를 일일이 패킷으로 보낼 필요가 없음.
+        // 각자 로컬 차트 데이터를 보고 정확한 시간에 생성하는 것이 더 정확함.
+        /*
         MultiplayerManager mpManager = FindFirstObjectByType<MultiplayerManager>();
         GameStateSyncManager gameStateSyncManager = FindFirstObjectByType<GameStateSyncManager>();
         if (mpManager != null && mpManager.IsAuthority && mpManager.gameStarted)
@@ -83,6 +85,7 @@ public class NoteSpawner : MonoBehaviour
                 gameStateSyncManager.SendNoteSpawn(noteData);
             }
         }
+        */
     }
 
     private void CreateNoteInstance(int laneIndex, SpawnEvent spawnEvent)
