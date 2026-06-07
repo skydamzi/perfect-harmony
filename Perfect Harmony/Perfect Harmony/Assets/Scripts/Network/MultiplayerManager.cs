@@ -323,8 +323,17 @@ public class MultiplayerManager : MonoBehaviour
     {
         if (connectedPlayers.ContainsKey(packet.playerId))
         {
-            connectedPlayers[packet.playerId].isChartReady = true; // Use this for chart analysis ready
-            Debug.Log($"Player {packet.playerId} chart is ready in room {currentRoomId}");
+            // 씬에 따라 로비 레디와 인게임 채보 레디를 구분
+            if (SceneManager.GetActiveScene().name == "Playing")
+            {
+                connectedPlayers[packet.playerId].isChartReady = true;
+                Debug.Log($"Player {packet.playerId} CHART is ready.");
+            }
+            else
+            {
+                connectedPlayers[packet.playerId].isReady = true;
+                Debug.Log($"Player {packet.playerId} LOBBY is ready.");
+            }
         }
     }
 
