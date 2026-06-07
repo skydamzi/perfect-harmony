@@ -35,7 +35,7 @@ public class MessagePacket
         this.type = type;
         this.playerId = playerId;
         this.roomId = roomId;
-        this.timestamp = Time.time;
+        this.timestamp = Time.realtimeSinceStartup; // Use absolute time
         this.systemTimestamp = DateTime.UtcNow.Ticks;
     }
 

@@ -79,7 +79,7 @@ public class TimingSyncManager : MonoBehaviour
         if (mpManager != null && mpManager.udpManager != null && !mpManager.IsAuthority)
         {
             MessagePacket packet = new MessagePacket(PacketType.SyncTime, mpManager.localPlayerId, mpManager.currentRoomId);
-            packet.serverTime = Time.time;
+            packet.serverTime = Time.realtimeSinceStartup;
             packet.songPosition = rhythmGameManager != null ? rhythmGameManager.songPosition : 0f;
             packet.currentBeat = rhythmGameManager != null ? rhythmGameManager.currentBeat : 0;
             
@@ -124,7 +124,7 @@ public class TimingSyncManager : MonoBehaviour
         // Add to sync history (don't add our own)
         if (packet.playerId != mpManager.localPlayerId)
         {
-            SyncRecord record = new SyncRecord(Time.time, packet.serverTime, packet.songPosition, packet.currentBeat);
+            SyncRecord record = new SyncRecord(Time.realtimeSinceStartup, packet.serverTime, packet.songPosition, packet.currentBeat);
             syncHistory.Add(record);
             
             // Keep only the latest sync records
@@ -145,7 +145,7 @@ public class TimingSyncManager : MonoBehaviour
         if (mpManager.IsAuthority && packet.playerId != mpManager.localPlayerId)
         {
             MessagePacket responsePacket = new MessagePacket(PacketType.SyncTime, mpManager.localPlayerId, mpManager.currentRoomId);
-            responsePacket.serverTime = Time.time;
+            responsePacket.serverTime = Time.realtimeSinceStartup;
             responsePacket.songPosition = rhythmGameManager != null ? rhythmGameManager.songPosition : 0f;
             responsePacket.currentBeat = rhythmGameManager != null ? rhythmGameManager.currentBeat : 0;
             
@@ -208,7 +208,7 @@ public class TimingSyncManager : MonoBehaviour
     // Get server time adjusted for network offset
     public float GetAdjustedServerTime()
     {
-        return Time.time + networkTimeOffset;
+        return Time.realtimeSinceStartup + networkTimeOffset;
     }
 
     // Get the time difference between server and local
@@ -220,7 +220,7 @@ public class TimingSyncManager : MonoBehaviour
     // Get server's song position (for client-side prediction)
     public float GetServerSongPosition(float localTime = -1f)
     {
-        if (localTime < 0) localTime = Time.time;
+        if (localTime < 0) localTime = Time.realtimeSinceStartup;
         
         // Predict server's position based on the last known state and elapsed time
         float timeSinceLastSync = localTime - (syncHistory.Count > 0 ? syncHistory[syncHistory.Count - 1].localTime : localTime);

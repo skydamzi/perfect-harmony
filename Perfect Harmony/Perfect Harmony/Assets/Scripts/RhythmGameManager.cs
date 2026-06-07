@@ -64,21 +64,9 @@ public class RhythmGameManager : MonoBehaviour
     {
         if (!isCountingDown && !isPlaying) return;
 
-        // [핵심] 절대 기준점 설정 (이게 틀어지면 리듬 다 깨짐)
-        if (isSyncStart && TimingSyncManager.Instance != null)
-        {
-            // 네트워크 동기화 시간 기준: 서버의 시작 시점을 내 로컬 시간으로 변환
-            // serverTime = localTime + offset  =>  localTime = serverTime - offset
-            actualSongStartTime = targetServerStartTime - TimingSyncManager.Instance.GetTimeOffset();
-            songStartTime = actualSongStartTime - startDelay;
-        }
-        else
-        {
-            // 싱글 플레이어 기준
-            actualSongStartTime = songStartTime + startDelay;
-        }
-
-        songPosition = Time.time - actualSongStartTime;
+        // [핵심] songPosition 계산
+        // actualSongStartTime은 StartCountdown(Sync)에서 이미 고정된 로컬 시간(Time.realtimeSinceStartup 기준)임
+        songPosition = Time.realtimeSinceStartup - actualSongStartTime;
 
         // 비트 및 진행도 계산 (멀티플레이어 동기화용 변수들 업데이트)
         currentBeat = Mathf.FloorToInt(songPosition / beatDuration);
@@ -87,7 +75,7 @@ public class RhythmGameManager : MonoBehaviour
 
         if (isCountingDown)
         {
-            float remainingTime = actualSongStartTime - Time.time;
+            float remainingTime = actualSongStartTime - Time.realtimeSinceStartup;
             if (countdownText != null)
             {
                 if (remainingTime > 0)
@@ -132,7 +120,10 @@ public class RhythmGameManager : MonoBehaviour
     public void StartCountdown()
     {
         isSyncStart = false;
-        songStartTime = Time.time;
+        // 싱글플레이: 현재 시간에서 startDelay 뒤에 시작
+        actualSongStartTime = Time.realtimeSinceStartup + startDelay;
+        songStartTime = Time.realtimeSinceStartup; 
+        
         isCountingDown = true;
         isPlaying = false;
 
@@ -144,13 +135,20 @@ public class RhythmGameManager : MonoBehaviour
     {
         isSyncStart = true;
         targetServerStartTime = targetServerStart;
+
+        // [중요] 시작 시점을 딱 한 번만 계산해서 고정!
+        // targetServerStart는 서버의 '노래 시작 시각' (Network Time)
+        // 이를 내 로컬 시간(realtimeSinceStartup)으로 변환
+        actualSongStartTime = targetServerStartTime - TimingSyncManager.Instance.GetTimeOffset();
+        songStartTime = actualSongStartTime - startDelay;
+
         isCountingDown = true;
         isPlaying = false;
 
         NoteSpawner noteSpawner = FindFirstObjectByType<NoteSpawner>();
         if (noteSpawner != null) noteSpawner.StartSpawning();
         
-        Debug.Log($"[Sync] Scheduled game start at Server Time: {targetServerStart}");
+        Debug.Log($"[Sync] Scheduled game start at Local Time: {actualSongStartTime} (Server: {targetServerStart})");
     }
 
     public void StartSong()
@@ -158,7 +156,15 @@ public class RhythmGameManager : MonoBehaviour
         if (isPlaying) return;
         isCountingDown = false;
         isPlaying = true;
-        if (audioSource != null && audioSource.clip != null) audioSource.Play();
+        
+        if (audioSource != null && audioSource.clip != null)
+        {
+            // 노래를 정확한 위치에서 재생 (네트워크 오차로 인해 시작이 0.1~0.2초 늦었을 경우 대비)
+            float playbackOffset = Time.realtimeSinceStartup - actualSongStartTime;
+            audioSource.time = Mathf.Max(0, playbackOffset);
+            audioSource.Play();
+        }
+        
         if (countdownText != null) countdownText.text = "";
     }
 
