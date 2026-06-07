@@ -187,7 +187,7 @@ public class MultiplayerManager : MonoBehaviour
     {
         if (p.playerId == localPlayerId) return;
         var handler = FindFirstObjectByType<MultiplayerInputHandler>();
-        if (handler) handler.HandleRemoteNoteHit(p.lane, (TimingResult)p.timingResult);
+        if (handler) handler.HandleRemoteNoteHit(p.lane, (TimingResult)p.timingResult, p.beatNumber);
     }
 
     // --- [복구] API for other scripts ---
@@ -207,9 +207,9 @@ public class MultiplayerManager : MonoBehaviour
         return connectedPlayers.Count >= 2;
     }
 
-    public void SendNoteHit(int lane, TimingResult res)
+    public void SendNoteHit(int lane, TimingResult res, float beatNumber)
     {
-        udpManager.SendPacket(MessagePacket.CreateHit(localPlayerId, currentRoomId, lane, (int)res, Time.realtimeSinceStartup));
+        udpManager.SendPacket(MessagePacket.CreateHit(localPlayerId, currentRoomId, lane, (int)res, beatNumber));
     }
 
     public void JoinRoom(string roomId)

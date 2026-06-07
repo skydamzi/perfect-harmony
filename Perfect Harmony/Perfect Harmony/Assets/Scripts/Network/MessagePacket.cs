@@ -51,10 +51,10 @@ public class MessagePacket
         return p;
     }
 
-    public static MessagePacket CreateHit(string id, string room, int lane, int res, float hitTime)
+    public static MessagePacket CreateHit(string id, string room, int lane, int res, float beatNumber)
     {
         MessagePacket p = new MessagePacket(PacketType.NoteHit, id, room);
-        p.lane = lane; p.timingResult = res; p.hitTime = hitTime;
+        p.lane = lane; p.timingResult = res; p.beatNumber = beatNumber;
         return p;
     }
 

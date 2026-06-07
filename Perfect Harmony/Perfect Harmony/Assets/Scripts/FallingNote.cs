@@ -78,7 +78,7 @@ public class FallingNote : MonoBehaviour
                 RhythmGameController.Instance.OnNoteHit(timingResult, this);
 
             if (MultiplayerManager.Instance != null && MultiplayerManager.Instance.gameStarted)
-                MultiplayerManager.Instance.SendNoteHit((int)lane, timingResult);
+                MultiplayerManager.Instance.SendNoteHit((int)lane, timingResult, beatNumber);
 
             SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
             if (spriteRenderer != null)

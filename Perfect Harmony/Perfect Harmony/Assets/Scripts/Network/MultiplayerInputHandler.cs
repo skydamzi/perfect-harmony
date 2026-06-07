@@ -108,7 +108,7 @@ public class MultiplayerInputHandler : MonoBehaviour
     }
 
     // Handle explicit note hit packet from server (Best for visual sync)
-    public void HandleRemoteNoteHit(int laneIndex, TimingResult timingResult)
+    public void HandleRemoteNoteHit(int laneIndex, TimingResult timingResult, float beatNumber)
     {
         // Determine position for effects based on lane index
         if (inputHandler == null) return;
@@ -124,9 +124,8 @@ public class MultiplayerInputHandler : MonoBehaviour
                 SpriteEffectManager.Instance.SpawnHitSprites(timingResult, targetPos);
             }
 
-            // 2. Find and destroy the closest note in that lane (Visual cleanup)
-            // [수정] realtimeSinceStartup 기준으로 노트를 찾음
-            FallingNote noteToRemove = FindClosestNoteInHitWindow((NoteLane)laneIndex, Time.realtimeSinceStartup);
+            // 2. Find and destroy the specific note in that lane based on beatNumber
+            FallingNote noteToRemove = FindNoteByBeatNumber((NoteLane)laneIndex, beatNumber);
             if (noteToRemove != null)
             {
                 noteToRemove.isHit = true;
@@ -134,5 +133,22 @@ public class MultiplayerInputHandler : MonoBehaviour
                 inputHandler.RemoveNoteFromLane(noteToRemove, (NoteLane)laneIndex);
             }
         }
+    }
+
+    private FallingNote FindNoteByBeatNumber(NoteLane lane, float beatNumber)
+    {
+        if (inputHandler == null) return null;
+        
+        var activeNotes = inputHandler.GetActiveNotesInLane(lane);
+        foreach (FallingNote note in activeNotes)
+        {
+            // Use a small epsilon for float comparison
+            if (note != null && !note.isHit && !note.isMissed && Mathf.Abs(note.beatNumber - beatNumber) < 0.01f)
+            {
+                return note;
+            }
+        }
+
+        return null;
     }
 }

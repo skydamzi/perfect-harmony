@@ -305,6 +305,27 @@ public class TimingSyncManager : MonoBehaviour
         return networkTimeOffset;
     }
 <<<<<<< HEAD
+<<<<<<< Updated upstream
+=======
+
+    // --- [복구] External scripts calling this after scene load ---
+    public void RefreshReferences()
+    {
+        mpManager = FindFirstObjectByType<MultiplayerManager>();
+        rhythmGameManager = FindFirstObjectByType<RhythmGameManager>();
+
+        if (mpManager != null && mpManager.udpManager != null)
+        {
+            // Remove previous listener to avoid double-firing
+            mpManager.udpManager.OnPacketReceived -= HandlePacket;
+            mpManager.udpManager.OnPacketReceived += HandlePacket;
+        }
+        
+        Debug.Log("[Sync] TimingSyncManager References Refreshed");
+    }
+=======
+<<<<<<< HEAD
+>>>>>>> Stashed changes
 <<<<<<< HEAD
 =======
 
@@ -348,4 +369,8 @@ public class TimingSyncManager : MonoBehaviour
         if (mpManager != null && mpManager.udpManager != null) mpManager.udpManager.OnPacketReceived -= HandlePacket;
     }
 >>>>>>> parent of 0e571fd (ㅌㅋㅊ)
+<<<<<<< Updated upstream
+=======
+>>>>>>> adfc2b37dd967c06854b98ee0196f6ff664decb0
+>>>>>>> Stashed changes
 }
