@@ -60,33 +60,55 @@ public class UDPManager : MonoBehaviour
                 
                 try
                 {
-                    // 1. Convert bytes to string
-                    string json = System.Text.Encoding.UTF8.GetString(info.rawData);
-                    
-                    // 2. Clean the string (Fix for "document root must not follow by other values")
-                    // Remove null terminators and trim whitespace
-                    json = json.Replace("\0", "").Trim();
+                    string rawJson = System.Text.Encoding.UTF8.GetString(info.rawData).Replace("\0", "").Trim();
+                    if (string.IsNullOrEmpty(rawJson)) continue;
 
-                    if (string.IsNullOrEmpty(json)) continue;
-
-                    // 3. Parse JSON safely on the main thread
-                    MessagePacket packet = JsonUtility.FromJson<MessagePacket>(json);
-                    
-                    if (packet != null && OnPacketReceived != null)
+                    // Support for multiple JSON objects in a single UDP datagram
+                    // (e.g. "{"type":1}{"type":2}")
+                    int braceCount = 0;
+                    int startIndex = 0;
+                    for (int i = 0; i < rawJson.Length; i++)
                     {
-                        if (packet.type != PacketType.Ping)
-                            Debug.Log($"[UDP] Received {packet.type} from {info.sender}");
-
-                        OnPacketReceived(packet, info.sender);
+                        if (rawJson[i] == '{') braceCount++;
+                        else if (rawJson[i] == '}')
+                        {
+                            braceCount--;
+                            if (braceCount == 0)
+                            {
+                                string singleJson = rawJson.Substring(startIndex, i - startIndex + 1);
+                                ProcessSinglePacket(singleJson, info.sender);
+                                startIndex = i + 1;
+                            }
+                        }
                     }
                 }
                 catch (Exception e)
                 {
-                    // Log fail data for diagnosis
-                    string rawStr = System.Text.Encoding.UTF8.GetString(info.rawData);
-                    Debug.LogError($"[UDP] JSON Parse Error: {e.Message}\nRaw JSON: {rawStr}");
+                    Debug.LogError($"[UDP] Packet Processing Error: {e.Message}");
                 }
             }
+        }
+    }
+
+    private void ProcessSinglePacket(string json, IPEndPoint sender)
+    {
+        try
+        {
+            MessagePacket packet = JsonUtility.FromJson<MessagePacket>(json);
+            if (packet != null && OnPacketReceived != null)
+            {
+                // Simple validation to ignore old/corrupted packets
+                if (string.IsNullOrEmpty(packet.playerId)) return;
+
+                if (packet.type != PacketType.Ping)
+                    Debug.Log($"[UDP] Received {packet.type} from {sender}");
+
+                OnPacketReceived(packet, sender);
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[UDP] JSON Parse Fail: {e.Message} | Data: {json}");
         }
     }
 
