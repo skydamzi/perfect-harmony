@@ -138,6 +138,14 @@ public class RhythmGameManager : MonoBehaviour
         beatsPerMinute = song.beatsPerMinute;
         beatDuration = 60f / beatsPerMinute;
         if (audioSource != null) audioSource.clip = song.audioClip;
+
+        // [핵심 추가] 채보 데이터를 NoteSpawner에게 전달합니다.
+        NoteSpawner spawner = FindFirstObjectByType<NoteSpawner>();
+        if (spawner != null && song.chartData != null)
+        {
+            spawner.spawnEvents = new List<SpawnEvent>(song.chartData);
+            Debug.Log($"[LoadSong] {song.chartData.Count} notes injected into NoteSpawner.");
+        }
     }
 
     public float BeatToTime(float beatNumber) => beatNumber * beatDuration;
