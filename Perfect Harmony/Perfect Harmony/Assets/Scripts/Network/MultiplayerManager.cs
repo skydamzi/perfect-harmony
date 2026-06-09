@@ -113,15 +113,16 @@ public class MultiplayerManager : MonoBehaviour
                 break;
 
             case PacketType.GameStart:
-                // 서버가 보내준 절대 시작 시각(serverTime) 수신
-                if (p.serverTime > 0)
-                {
-                    ExecuteSyncStart(p.serverTime);
-                }
-                else if (state == MultiplayerState.Lobby)
+                // [1단계] 로비에 있는 경우: 씬 전환을 최우선으로 수행
+                if (state == MultiplayerState.Lobby)
                 {
                     state = MultiplayerState.Loading;
                     SceneManager.LoadScene("Playing");
+                }
+                // [2단계] 이미 Playing 씬에 들어와서 준비(Ready) 상태인 경우에만 정밀 동기화 시작
+                else if (p.serverTime > 0 && state == MultiplayerState.Ready)
+                {
+                    ExecuteSyncStart(p.serverTime);
                 }
                 break;
                 
