@@ -155,20 +155,21 @@ public class GameStateSyncManager : MonoBehaviour
 
     private void Update()
     {
-        // [수정] 카운트다운 중이거나 아직 곡이 시작되지 않았으면 시간을 강제로 맞추지 않음
-        if (rhythmGameManager != null && rhythmGameManager.isCountingDown) return;
+        // 카운트다운 중에는 개입하지 않음 (RhythmGameManager가 처리)
+        if (rhythmGameManager != null && (rhythmGameManager.isCountingDown || !rhythmGameManager.isPlaying)) return;
 
         if (hasSyncedStart && rhythmGameManager != null && mpManager != null)
         {
-            float currentActual = (float)rhythmGameManager.actualSongStartTime;
+            // 서버 시간을 기준으로 계산된 실제 곡 시작 시각과 타겟 시각 동기화
+            float currentActual = (float)rhythmGameManager.targetServerStartTime;
             if (Mathf.Abs(currentActual - targetSongStartTime) > 0.5f)
             {
-                rhythmGameManager.actualSongStartTime = (double)targetSongStartTime;
+                rhythmGameManager.targetServerStartTime = (double)targetSongStartTime;
             }
             else
             {
                 float lerped = Mathf.Lerp(currentActual, targetSongStartTime, Time.deltaTime * syncSmoothSpeed);
-                rhythmGameManager.actualSongStartTime = (double)lerped;
+                rhythmGameManager.targetServerStartTime = (double)lerped;
             }
         }
     }

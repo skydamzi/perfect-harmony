@@ -5,17 +5,17 @@ public class TimingSyncManager : MonoBehaviour
 {
     public static TimingSyncManager Instance { get; private set; }
 
-    [Header("Timing Sync Settings")]
-    public float syncInterval = 1.0f; 
-    public int minSyncsToStart = 5;    
-    public double networkTimeOffset = 0; 
-    public float packetExchangeLatency = 0f; 
+    [Header("Sync Settings")]
+    public float pingInterval = 1.0f;
+    public int minSyncsToStart = 5;
+
+    [Header("Current Status")]
+    public double networkTimeOffset = 0; // ServerTime - LocalTime
+    public float rtt = 0f;
+    public int syncCount = 0;
 
     private List<double> offsetHistory = new List<double>();
-    private int syncCount = 0;
-    
     private MultiplayerManager mpManager;
-    private RhythmGameManager rhythmGameManager;
 
     public bool IsSynced => syncCount >= minSyncsToStart;
 
@@ -28,18 +28,17 @@ public class TimingSyncManager : MonoBehaviour
     private void Start()
     {
         mpManager = FindFirstObjectByType<MultiplayerManager>();
-        rhythmGameManager = FindFirstObjectByType<RhythmGameManager>();
-
-        if (mpManager != null && mpManager.udpManager != null) 
+        if (mpManager != null && mpManager.udpManager != null)
             mpManager.udpManager.OnPacketReceived += HandlePacket;
 
-        InvokeRepeating("SendPingPacket", 0f, 1.0f);
+        InvokeRepeating("SendPing", 0.5f, pingInterval);
     }
 
-    private void SendPingPacket()
+    private void SendPing()
     {
         if (mpManager != null && mpManager.udpManager != null)
         {
+            // T1: systemTimestamp (Precision UTC Ticks)
             MessagePacket p = new MessagePacket(PacketType.Ping, mpManager.localPlayerId, mpManager.currentRoomId);
             mpManager.udpManager.SendPacket(p);
         }
@@ -47,34 +46,29 @@ public class TimingSyncManager : MonoBehaviour
 
     private void HandlePacket(MessagePacket p, System.Net.IPEndPoint sender, double arrivalTimestamp)
     {
-        if (!string.IsNullOrEmpty(p.roomId) && p.roomId != mpManager.currentRoomId && p.roomId != "Global") return;
-
-        if (p.type == PacketType.Ping && p.relayTimestamp > 0 && p.playerId == mpManager.localPlayerId)
+        // 내 핑 응답만 처리 (T2, T3 포함됨)
+        if (p.type == PacketType.Ping && p.playerId == mpManager.localPlayerId && p.relayTimestamp > 0)
         {
-            ProcessPrecisionSync(p, arrivalTimestamp);
+            CalculateOffset(p);
         }
     }
 
-    private void ProcessPrecisionSync(MessagePacket p, double arrivalTimestamp)
+    private void CalculateOffset(MessagePacket p)
     {
-        // 모든 계산은 double 정밀도의 초(seconds) 단위로 통일
+        // T1: 발신 (Client)
         double t1 = (double)p.systemTimestamp / 10000000.0;
+        // T4: 수신 (Client)
         double t4 = (double)System.DateTime.UtcNow.Ticks / 10000000.0;
-        
-        // 서버에서 온 T2, T3 (이미 초 단위임)
+        // T2: 서버 수신, T3: 서버 발신
         double t2 = p.startTime;
         double t3 = p.relayTimestamp;
 
-        double rtt = t4 - t1;
-        double serverProcessing = t3 - t2;
-        
-        // 순수 네트워크 지연 (편도)
-        double networkLatency = Mathf.Max(0, (float)((rtt - serverProcessing) / 2.0));
-        packetExchangeLatency = (float)(networkLatency * 1000.0 * 2.0);
-
         // NTP 공식: Offset = ((T2 - T1) + (T3 - T4)) / 2
         double currentOffset = ((t2 - t1) + (t3 - t4)) / 2.0;
-
+        double currentRtt = (t4 - t1) - (t3 - t2);
+        
+        rtt = (float)(currentRtt * 1000.0);
+        
         offsetHistory.Add(currentOffset);
         if (offsetHistory.Count > 15) offsetHistory.RemoveAt(0);
 
@@ -83,36 +77,31 @@ public class TimingSyncManager : MonoBehaviour
         networkTimeOffset = sum / offsetHistory.Count;
         
         syncCount++;
-        // Debug.Log($"[Sync] RTT: {rtt:F4}s, Proc: {serverProcessing:F4}s, Offset: {networkTimeOffset:F4}s");
     }
 
-    public double GetAdjustedServerTime()
+    // 서버의 절대 시각을 내 로컬 시간(realtimeSinceStartup)으로 변환할 때 쓰는 오프셋이 아님!
+    // 서버 시각(UTC) - 내 시각(UTC)의 차이임.
+    
+    public double GetCurrentServerTime()
     {
-        return (double)Time.realtimeSinceStartup + networkTimeOffset;
-    }
-
-    public double GetTimeOffset()
-    {
-        return networkTimeOffset;
+        // 현재 내 컴퓨터의 UTC 시각 + 오프셋 = 서버의 UTC 시각
+        double localNow = (double)System.DateTime.UtcNow.Ticks / 10000000.0;
+        return localNow + networkTimeOffset;
     }
 
     public void RefreshReferences()
     {
         mpManager = FindFirstObjectByType<MultiplayerManager>();
-        rhythmGameManager = FindFirstObjectByType<RhythmGameManager>();
-
         if (mpManager != null && mpManager.udpManager != null)
         {
             mpManager.udpManager.OnPacketReceived -= HandlePacket;
             mpManager.udpManager.OnPacketReceived += HandlePacket;
         }
-        
-        Debug.Log("[Sync] TimingSyncManager References Refreshed");
     }
 
     private void OnDestroy()
     {
-        if (mpManager != null && mpManager.udpManager != null) 
+        if (mpManager != null && mpManager.udpManager != null)
             mpManager.udpManager.OnPacketReceived -= HandlePacket;
     }
 }

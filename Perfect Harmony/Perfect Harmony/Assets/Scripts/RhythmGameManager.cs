@@ -1,181 +1,104 @@
 using System.Collections.Generic;
 using UnityEngine;
-
+using UnityEngine.UI;
 
 public class RhythmGameManager : MonoBehaviour
 {
     public static RhythmGameManager Instance { get; private set; }
 
-    [Header("Current Song")]
-    public SongData selectedSong;
+    [Header("Audio")]
     public AudioSource audioSource;
+    public SongData selectedSong;
 
-    [Header("Game Settings (Sync)")]
+    [Header("Sync Status")]
     public bool isPlaying = false;
     public bool isCountingDown = false;
-    public float songPosition;         // 현재 곡의 시간 (기준점 대비)
-    public float songStartTime;        // 카운트다운 시작 버튼 누른 시점 (Time.time)
-    public double actualSongStartTime;  // [복구] 곡이 실제로 시작되는 시점 (double 정밀도 유지)
+    public double targetServerStartTime; // 서버 기준 곡 시작 절대 시각 (UTC)
+    public float songPosition;           // 현재 곡의 진행 시간 (초)
 
-    [Header("Game Settings")]
+    [Header("Song Settings")]
     public float beatsPerMinute = 120f;
     public float beatDuration;
-    public int beatsPerMeasure = 4;
-    public float spawnOffset = 2.0f;
-    public float startDelay = 3.0f; // [고정] 3초 카운트다운
+    public float startDelay = 3.5f; // 서버와 동일하게 맞춤
 
-    [Header("Timing Windows")]
-    public float perfectWindow = 0.1f;
-    public float goodWindow = 0.2f;
-    public float okayWindow = 0.3f;
-
-    [Header("Game State")]
-    public int currentBeat;     // [복구] 현재 몇 번째 비트인지
-    public float beatProgress;  // [복구] 현재 비트 내 진행도 (0~1)
-    public int currentMeasure;
-
-    [Header("UI References")]
-    public UnityEngine.UI.Text countdownText;
-
-    private float beatTime;
+    [Header("UI")]
+    public Text countdownText;
 
     private void Awake()
     {
         if (Instance != null && Instance != this) Destroy(gameObject);
-        else
-        {
-            Instance = this;
-            DontDestroyOnLoad(gameObject);
-        }
-    }
-
-    private void Start()
-    {
-        if (audioSource == null) audioSource = GetComponent<AudioSource>();
-        if (selectedSong != null) LoadSong(selectedSong);
-        else beatDuration = 60f / beatsPerMinute;
+        else { Instance = this; DontDestroyOnLoad(gameObject); }
     }
 
     private void Update()
     {
         if (!isCountingDown && !isPlaying) return;
 
-        // [핵심] songPosition 계산
-        // actualSongStartTime은 StartCountdown(Sync)에서 이미 고정된 로컬 시간(Time.realtimeSinceStartup 기준)임
-        songPosition = (float)((double)Time.realtimeSinceStartup - actualSongStartTime);
-
-        // 비트 및 진행도 계산 (멀티플레이어 동기화용 변수들 업데이트)
-        currentBeat = Mathf.FloorToInt(songPosition / beatDuration);
-        currentMeasure = Mathf.FloorToInt(currentBeat / beatsPerMeasure);
-        beatProgress = (songPosition % beatDuration) / beatDuration;
+        // 서버 시간을 가져와서 곡의 현재 위치 계산
+        double currentServerTime = TimingSyncManager.Instance.GetCurrentServerTime();
+        songPosition = (float)(currentServerTime - targetServerStartTime);
 
         if (isCountingDown)
         {
-            double remainingTime = actualSongStartTime - (double)Time.realtimeSinceStartup;
+            float remaining = (float)(targetServerStartTime - currentServerTime);
             if (countdownText != null)
             {
-                if (remainingTime > 0)
-                {
-                    countdownText.text = Mathf.CeilToInt((float)remainingTime).ToString();
-                }
-                else
-                {
-                    countdownText.text = "시작!";
-                }
+                if (remaining > 0) countdownText.text = Mathf.CeilToInt(remaining).ToString();
+                else countdownText.text = "GO!";
             }
 
-            if (remainingTime <= 0) StartSong();
+            if (remaining <= 0) StartSong();
         }
 
-        if (isPlaying)
+        if (isPlaying && audioSource.clip != null)
         {
-            if (audioSource.clip != null && songPosition > audioSource.clip.length + 1.0f)
-            {
-                FinishGame();
-            }
+            if (songPosition > audioSource.clip.length + 1.0f) FinishGame();
         }
     }
 
-    public void LoadSong(SongData song)
+    public void StartSyncCountdown(double serverStartTime)
     {
-        selectedSong = song;
-        beatsPerMinute = song.beatsPerMinute;
-        spawnOffset = song.noteSpeed;
-        beatDuration = 60f / beatsPerMinute;
-        if (song.audioClip != null) audioSource.clip = song.audioClip;
-
-        NoteSpawner noteSpawner = FindFirstObjectByType<NoteSpawner>();
-        if (noteSpawner != null)
-        {
-            noteSpawner.ClearSpawnEvents();
-            if (song.chartData != null)
-                noteSpawner.spawnEvents = new List<SpawnEvent>(song.chartData);
-        }
-    }
-
-    public void StartCountdown()
-    {
-        // 싱글플레이: 현재 시간에서 startDelay 뒤에 시작
-        actualSongStartTime = (double)Time.realtimeSinceStartup + (double)startDelay;
-        songStartTime = Time.realtimeSinceStartup; 
-        
+        targetServerStartTime = serverStartTime;
         isCountingDown = true;
         isPlaying = false;
-
-        NoteSpawner noteSpawner = FindFirstObjectByType<NoteSpawner>();
-        if (noteSpawner != null) noteSpawner.StartSpawning();
-    }
-
-    public void StartCountdownSync(double targetServerStart)
-    {
-        // [중요] 시작 시점을 딱 한 번만 계산해서 고정!
-        // targetServerStart는 서버의 '노래 시작 시각' (Network Time)
-        // 이를 내 로컬 시간(realtimeSinceStartup)으로 변환
-        actualSongStartTime = targetServerStart - TimingSyncManager.Instance.GetTimeOffset();
-        songStartTime = (float)actualSongStartTime - startDelay;
-
-        isCountingDown = true;
-        isPlaying = false;
-
-        NoteSpawner noteSpawner = FindFirstObjectByType<NoteSpawner>();
-        if (noteSpawner != null) noteSpawner.StartSpawning();
         
-        Debug.Log($"[Sync] Scheduled game start at Local Time: {actualSongStartTime} (Server: {targetServerStart})");
+        // 노트 스포너 시작
+        NoteSpawner spawner = FindFirstObjectByType<NoteSpawner>();
+        if (spawner != null) spawner.StartSpawning();
+        
+        Debug.Log($"[Sync] Game Start Scheduled at Server Time: {serverStartTime}");
     }
 
-    public void StartSong()
+    private void StartSong()
     {
         if (isPlaying) return;
         isCountingDown = false;
         isPlaying = true;
-        
+
         if (audioSource != null && audioSource.clip != null)
         {
-            // 노래를 정확한 위치에서 재생 (네트워크 오차로 인해 시작이 0.1~0.2초 늦었을 경우 대비)
-            double playbackOffset = (double)Time.realtimeSinceStartup - actualSongStartTime;
-            audioSource.time = Mathf.Max(0, (float)playbackOffset);
+            // [정밀 보정] 패킷 지연으로 인해 시작이 늦었을 수 있으므로 
+            // 현재 곡 위치(songPosition)에 맞춰서 오디오 재생 시작
+            audioSource.time = Mathf.Max(0, songPosition);
             audioSource.Play();
         }
         
         if (countdownText != null) countdownText.text = "";
     }
 
-    // [복구] InputHandler랑 Multiplayer에서 쓰고 있는 판정 함수
-    public TimingResult CheckTiming(float hitTime, float targetTime)
-    {
-        float timeDifference = Mathf.Abs(hitTime - targetTime);
-        if (timeDifference <= perfectWindow) return TimingResult.Perfect;
-        else if (timeDifference <= goodWindow) return TimingResult.Good;
-        else if (timeDifference <= okayWindow) return TimingResult.Okay;
-        else return TimingResult.Miss;
-    }
-
     public void FinishGame()
     {
         isPlaying = false;
         if (audioSource != null) audioSource.Stop();
-        FrameCounter fc = FindFirstObjectByType<FrameCounter>();
-        if (fc != null) fc.ShowSessionResult();
+        // 결과창 표시 로직 등...
+    }
+
+    public void LoadSong(SongData song)
+    {
+        selectedSong = song;
+        beatsPerMinute = song.beatsPerMinute;
+        beatDuration = 60f / beatsPerMinute;
+        if (audioSource != null) audioSource.clip = song.audioClip;
     }
 
     public float BeatToTime(float beatNumber) => beatNumber * beatDuration;

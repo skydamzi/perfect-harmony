@@ -1,173 +1,284 @@
 import asyncio
 import json
 import time
-from typing import Dict, Tuple
-from fastapi import FastAPI, UploadFile, File
-import librosa
+import logging
+import os
+import shutil
+import uuid
+import threading
 import numpy as np
-import io
-import torch
-import soundfile as sf
-from demucs.separate import main as demucs_main
-
-app = FastAPI()
+import librosa
+from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, Tuple, List, Optional, Set
 
 # ==========================================
-# [1] 채보 생성 로직 (HTTP 8000)
+# [1] 전역 설정 및 고성능 로깅 시스템
+# ==========================================
+# 서버의 모든 동작을 추적하기 위한 로깅 설정
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+)
+logger = logging.getLogger("CentralServer")
+
+# FastAPI 인스턴스 생성
+from fastapi import FastAPI, UploadFile, File
+app = FastAPI(title="Perfect Harmony High-Reliability Server")
+
+# 무거운 분석 작업(Librosa, Demucs)이 UDP 중계를 방해하지 않도록 별도 스레드 풀 할당
+# CPU 코어 수에 맞춰 최적의 병렬 처리 수행
+executor = ThreadPoolExecutor(max_workers=os.cpu_count() or 4)
+
+# ==========================================
+# [2] 채보 생성 엔진 (Absolute Stability)
 # ==========================================
 
-SAMPLE_PIANO = "piano.wav"
-device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"--- [시스템 안내] 감지된 장치: {device.upper()} ---")
+class ChartGenerator:
+    """음원 분석 및 채보 생성을 담당하는 독립 엔진"""
+    SAMPLE_PIANO = "piano.wav"
 
-def get_normalized_fp(y, sr):
-    mfcc = librosa.feature.mfcc(y=y, sr=sr, n_fft=2048, n_mfcc=40)
-    mfcc_mean = np.mean(mfcc, axis=1)
-    return (mfcc_mean - np.mean(mfcc_mean)) / (np.std(mfcc_mean) + 1e-9)
+    @staticmethod
+    def get_normalized_fp(y, sr):
+        """피아노 지문 추출을 위한 정규화된 MFCC 계산"""
+        mfcc = librosa.feature.mfcc(y=y, sr=sr, n_fft=2048, n_mfcc=40)
+        mfcc_mean = np.mean(mfcc, axis=1)
+        return (mfcc_mean - np.mean(mfcc_mean)) / (np.std(mfcc_mean) + 1e-9)
 
-def run_demucs_separation(audio_bytes):
-    with open("temp_input.wav", "wb") as f:
-        f.write(audio_bytes)
-    print("-> Demucs AI 음원 분리 가동 중 (CPU 안정 모드)...")
-    demucs_main(["-n", "htdemucs", "-d", "cpu", "temp_input.wav", "-o", "separated_out"])
-    
-    base_path = "separated_out/htdemucs/temp_input/"
-    y_drums, sr = librosa.load(f"{base_path}drums.wav", sr=None)
-    y_bass, _ = librosa.load(f"{base_path}bass.wav", sr=sr)
-    y_other, _ = librosa.load(f"{base_path}other.wav", sr=sr)
-    return y_drums, y_bass, y_other, sr
+    @classmethod
+    def process_audio(cls, audio_bytes: bytes, filename: str):
+        """음원 분리부터 채보 생성까지 전 과정을 스레드 안전하게 처리"""
+        import numpy as np # 스레드 내 재임포트 방지
+        from demucs.separate import main as demucs_main
+        
+        # 겹치지 않는 유니크한 작업 폴더 생성
+        job_id = str(uuid.uuid4())[:8]
+        temp_dir = f"job_{job_id}_{int(time.time())}"
+        os.makedirs(temp_dir, exist_ok=True)
+        input_path = os.path.join(temp_dir, "input.wav")
+        
+        try:
+            with open(input_path, "wb") as f:
+                f.write(audio_bytes)
+
+            logger.info(f"==> [{filename}] 분석 시작 (ID: {job_id})")
+            
+            # [Step 1] AI 음원 분리 (CPU 안정 모드)
+            # -n htdemucs: 최신 모델 사용
+            # -o: 출력 경로 지정
+            demucs_main(["-n", "htdemucs", "-d", "cpu", input_path, "-o", temp_dir])
+            
+            # 분리된 결과물 경로 확인
+            base_path = os.path.join(temp_dir, "htdemucs", "input")
+            if not os.path.exists(base_path):
+                raise FileNotFoundError(f"Demucs output not found for {job_id}")
+
+            # [Step 2] 악기별 트랙 로드
+            y_drums, sr = librosa.load(os.path.join(base_path, "drums.wav"), sr=None)
+            y_bass, _ = librosa.load(os.path.join(base_path, "bass.wav"), sr=sr)
+            y_other, _ = librosa.load(os.path.join(base_path, "other.wav"), sr=sr)
+
+            # [Step 3] 공통 BPM 분석
+            tempo, _ = librosa.beat.beat_track(y=y_drums, sr=sr)
+            actual_tempo = float(tempo[0]) if isinstance(tempo, np.ndarray) else float(tempo)
+            if actual_tempo <= 0: actual_tempo = 120.0
+
+            tracks = {"drums": [], "bass": [], "piano": []}
+
+            # [Step 4] 드럼 채보 (킥/스네어 레인 구분)
+            onset_drums = librosa.onset.onset_strength(y=y_drums, sr=sr)
+            peaks_drums = librosa.onset.onset_detect(onset_envelope=onset_drums, sr=sr, delta=0.2, wait=10)
+            for f in peaks_drums:
+                t = librosa.frames_to_time(f, sr=sr)
+                # 고음/저음 분석으로 레인 배정
+                stft = np.abs(librosa.stft(y_drums[f*512 : f*512 + 2048]))
+                lane = 0 if np.argmax(stft) < 50 else 1
+                tracks["drums"].append({"beatNumber": round(t * (actual_tempo / 60), 2), "lane": lane})
+
+            # [Step 5] 베이스 채보 (4레인 분산)
+            chroma_bass = librosa.feature.chroma_stft(y=y_bass, sr=sr)
+            onset_bass = librosa.onset.onset_strength(y=y_bass, sr=sr)
+            peaks_bass = librosa.onset.onset_detect(onset_envelope=onset_bass, sr=sr, delta=0.15, wait=12)
+            for f in peaks_bass:
+                t = librosa.frames_to_time(f, sr=sr)
+                p_idx = np.argmax(chroma_bass[:, f])
+                tracks["bass"].append({"beatNumber": round(t * (actual_tempo / 60), 2), "lane": int(p_idx % 4)})
+
+            # [Step 6] 피아노 채보 (지문 기반 정밀 분석)
+            if os.path.exists(cls.SAMPLE_PIANO):
+                y_p, _ = librosa.load(cls.SAMPLE_PIANO, sr=sr)
+                fp_ref = cls.get_normalized_fp(y_p, sr)
+                chroma_p = librosa.feature.chroma_stft(y=y_other, sr=sr)
+                onset_p = librosa.onset.onset_strength(y=y_other, sr=sr)
+                peaks_p = librosa.onset.onset_detect(onset_envelope=onset_p, sr=sr, delta=0.14, wait=15)
+                mfcc_all = librosa.feature.mfcc(y=y_other, sr=sr, n_mfcc=40)
+                for f in peaks_p:
+                    curr_fp = mfcc_all[:, f]
+                    curr_fp_norm = (curr_fp - np.mean(curr_fp)) / (np.std(curr_fp) + 1e-9)
+                    sim = np.dot(fp_ref, curr_fp_norm) / (np.linalg.norm(fp_ref) * np.linalg.norm(curr_fp_norm) + 1e-9)
+                    if sim > 0.82:
+                        t = librosa.frames_to_time(f, sr=sr)
+                        p_idx = np.argmax(chroma_p[:, f])
+                        tracks["piano"].append({"beatNumber": round(t * (actual_tempo / 60), 2), "lane": int(p_idx // 3)})
+
+            # [Step 7] 결과 정렬
+            for inst in tracks:
+                tracks[inst].sort(key=lambda x: x["beatNumber"])
+
+            logger.info(f"<== [{filename}] 분석 완료 (Job: {job_id})")
+            return {"beatsPerMinute": round(actual_tempo, 2), "tracks": tracks}
+
+        except Exception as e:
+            logger.error(f"!!! [{filename}] 분석 중 치명적 오류: {str(e)}")
+            return {"error": str(e)}
+        finally:
+            # 임시 리소스 완벽 삭제 (디스크 풀 방지)
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 @app.post("/generate-chart")
-async def generate_chart(file: UploadFile = File(...)):
-    print(f"--- 분석 시작: {file.filename} ---")
+async def api_generate_chart(file: UploadFile = File(...)):
+    """외부 HTTP 요청을 처리하는 엔드포인트"""
     content = await file.read()
-    try:
-        y_drums, y_bass, y_piano_raw, sr = run_demucs_separation(content)
-    except Exception as e:
-        return {"error": str(e)}
-    
-    tempo, _ = librosa.beat.beat_track(y=y_drums, sr=sr)
-    actual_tempo = float(tempo[0]) if isinstance(tempo, np.ndarray) else float(tempo)
-    if actual_tempo <= 0: actual_tempo = 120.0
-
-    tracks = {"drums": [], "bass": [], "piano": []}
-
-    # 드럼
-    onset_env_drums = librosa.onset.onset_strength(y=y_drums, sr=sr)
-    peaks_drums = librosa.onset.onset_detect(onset_envelope=onset_env_drums, sr=sr, delta=0.2, wait=10)
-    for frame in peaks_drums:
-        time_val = librosa.frames_to_time(frame, sr=sr)
-        beat_val = float(time_val * (actual_tempo / 60))
-        stft = np.abs(librosa.stft(y_drums[frame*512 : frame*512 + 2048]))
-        lane = 0 if np.argmax(stft) < 50 else 1
-        tracks["drums"].append({"beatNumber": round(beat_val, 2), "lane": lane})
-
-    # 베이스
-    chroma_bass = librosa.feature.chroma_stft(y=y_bass, sr=sr)
-    onset_env_bass = librosa.onset.onset_strength(y=y_bass, sr=sr)
-    peaks_bass = librosa.onset.onset_detect(onset_envelope=onset_env_bass, sr=sr, delta=0.15, wait=12)
-    for frame in peaks_bass:
-        time_val = librosa.frames_to_time(frame, sr=sr)
-        beat_val = float(time_val * (actual_tempo / 60))
-        pitch_idx = np.argmax(chroma_bass[:, frame])
-        lane = int(pitch_idx % 4)
-        tracks["bass"].append({"beatNumber": round(beat_val, 2), "lane": lane})
-
-    # 피아노
-    try:
-        y_p, _ = librosa.load(SAMPLE_PIANO, sr=sr)
-        fp_piano = get_normalized_fp(y_p, sr)
-        chroma_piano = librosa.feature.chroma_stft(y=y_piano_raw, sr=sr)
-        onset_env_piano = librosa.onset.onset_strength(y=y_piano_raw, sr=sr)
-        peaks_piano = librosa.onset.onset_detect(onset_envelope=onset_env_piano, sr=sr, delta=0.14, wait=15)
-        mfcc_full = librosa.feature.mfcc(y=y_piano_raw, sr=sr, n_mfcc=40)
-        for frame in peaks_piano:
-            current_fp = mfcc_full[:, frame]
-            current_fp_norm = (current_fp - np.mean(current_fp)) / (np.std(current_fp) + 1e-9)
-            sim_p = np.dot(fp_piano, current_fp_norm) / (np.linalg.norm(fp_piano) * np.linalg.norm(current_fp_norm) + 1e-9)
-            if sim_p > 0.82:
-                time_val = librosa.frames_to_time(frame, sr=sr)
-                beat_val = float(time_val * (actual_tempo / 60))
-                pitch_idx = np.argmax(chroma_piano[:, frame])
-                lane = int(pitch_idx // 3)
-                tracks["piano"].append({"beatNumber": round(beat_val, 2), "lane": lane})
-    except: pass
-
-    for instrument in tracks:
-        tracks[instrument].sort(key=lambda x: x["beatNumber"])
-    
-    return {"beatsPerMinute": round(actual_tempo, 2), "tracks": tracks}
+    loop = asyncio.get_running_loop()
+    # 무거운 작업은 스레드 풀에서 실행하여 UDP 중계를 방해하지 않음
+    return await loop.run_in_executor(executor, ChartGenerator.process_audio, content, file.filename)
 
 # ==========================================
-# [2] UDP 멀티플레이 중계 서버 로직 (UDP 8080)
+# [3] 고신뢰성 UDP 멀티플레이 중계 엔진 (UDP 8080)
 # ==========================================
 
-class Room:
+class UDPClient:
+    def __init__(self, player_id: str, addr: Tuple[str, int]):
+        self.player_id = player_id
+        self.addr = addr
+        self.last_seen = time.time()
+
+class UDPRoom:
     def __init__(self, room_id: str):
         self.room_id = room_id
-        self.clients: Dict[str, Tuple[str, int]] = {}
+        self.clients: Dict[str, UDPClient] = {}
 
-class UDPRelayProtocol(asyncio.DatagramProtocol):
+class ReliableUDPRelay(asyncio.DatagramProtocol):
+    """지연 없는 중계와 정밀 동기화를 담당하는 UDP 서버"""
     def __init__(self):
-        self.rooms: Dict[str, Room] = {}
+        self.rooms: Dict[str, UDPRoom] = {}
         self.transport = None
+        self.start_delay = 3.5 # 게임 시작까지의 절대 유예 시간
 
     def connection_made(self, transport):
         self.transport = transport
-        print("-> [UDP] 서버 가동 (Port 8080)")
+        logger.info("-> [UDP] Relay Server 가동 완료 (Port: 8080)")
+        asyncio.create_task(self._cleanup_loop())
 
-    def datagram_received(self, data, addr):
+    def datagram_received(self, data: bytes, addr: Tuple[str, int]):
         try:
-            recv_time = time.time()
-            packet = json.loads(data.decode('utf-8'))
+            recv_time = time.time() # T2: 서버 수신 시각
+            packet_str = data.decode('utf-8').strip()
+            if not packet_str: return
+            
+            packet = json.loads(packet_str)
             p_type = packet.get("type")
             player_id = packet.get("playerId")
             room_id = packet.get("roomId", "Lobby")
 
-            # 방 관리
-            if room_id not in self.rooms:
-                self.rooms[room_id] = Room(room_id)
-            self.rooms[room_id].clients[player_id] = addr
+            if not player_id: return
 
-            # 핑 패킷 (동기화)
-            if p_type == 2:
-                packet["relayTimestamp"] = time.time()
-                # T2(수신 시각)를 추가로 보내면 클라이언트에서 처리 지연을 계산 가능
-                packet["startTime"] = recv_time 
+            # [세션 관리]
+            if room_id not in self.rooms:
+                self.rooms[room_id] = UDPRoom(room_id)
+            
+            room = self.rooms[room_id]
+            if player_id not in room.clients:
+                room.clients[player_id] = UDPClient(player_id, addr)
+                logger.info(f"[UDP] New Session: {player_id} in {room_id}")
+            else:
+                room.clients[player_id].last_seen = recv_time
+                room.clients[player_id].addr = addr
+
+            # [패킷 로직 분기]
+            
+            # 1. 정밀 동기화 핑 (NTP)
+            if p_type == 2: # PacketType.Ping
+                packet["startTime"] = recv_time # T2
+                packet["relayTimestamp"] = time.time() # T3: 서버 발신 시각
                 self.transport.sendto(json.dumps(packet).encode('utf-8'), addr)
 
-            # 게임 시작 (신뢰성 전송)
-            elif p_type == 5:
-                print(f"-> [{room_id}] Game Start by {player_id}")
-                asyncio.create_task(self.reliable_broadcast(room_id, packet))
+            # 2. 게임 시작 (서버 시간 권한 부여)
+            elif p_type == 5: # PacketType.GameStart
+                logger.info(f"[UDP] Sync Start Triggered by {player_id} in {room_id}")
+                # 모든 클라이언트가 공유할 절대 시작 시각 계산
+                packet["serverTime"] = time.time() + self.start_delay
+                # 패킷 유실 방지를 위해 신뢰성 전송 루틴 실행
+                asyncio.create_task(self._reliable_broadcast(room_id, packet))
 
-            # 일반 중계
+            # 3. 접속 종료
+            elif p_type in (1, 4): # Disconnect, LeaveRoom
+                self._remove_player(player_id, room_id)
+                self._broadcast(room_id, data, exclude_id=player_id)
+
+            # 4. 일반 데이터 중계
             else:
                 packet["relayTimestamp"] = time.time()
-                updated_data = json.dumps(packet).encode('utf-8')
-                self.broadcast(room_id, updated_data, exclude_id=player_id)
+                relay_data = json.dumps(packet).encode('utf-8')
+                self._broadcast(room_id, relay_data, exclude_id=player_id)
 
         except Exception as e:
-            print(f"UDP Error: {e}")
+            # 개별 패킷 오류가 서버 전체에 영향을 주지 않도록 격리
+            pass
 
-    def broadcast(self, room_id, data, exclude_id=None):
+    def _broadcast(self, room_id, data, exclude_id=None):
+        """방에 있는 모든 유저에게 데이터 전송"""
         if room_id in self.rooms:
-            for pid, addr in self.rooms[room_id].clients.items():
+            # 런타임 수정을 대비해 리스트 복사본 순회
+            for pid, client in list(self.rooms[room_id].clients.items()):
                 if pid != exclude_id:
-                    self.transport.sendto(data, addr)
+                    try:
+                        self.transport.sendto(data, client.addr)
+                    except:
+                        pass
 
-    async def reliable_broadcast(self, room_id, packet, count=5):
+    async def _reliable_broadcast(self, room_id, packet, count=8):
+        """중요 패킷을 여러 번 반복 전송하여 도달 보장 (UDP 보완)"""
         for _ in range(count):
             packet["relayTimestamp"] = time.time()
             data = json.dumps(packet).encode('utf-8')
-            self.broadcast(room_id, data)
-            await asyncio.sleep(0.1)
+            self._broadcast(room_id, data)
+            await asyncio.sleep(0.05) # 50ms 간격
 
+    def _remove_player(self, player_id, room_id):
+        """유저 정보 제거 및 빈 방 청소"""
+        if room_id in self.rooms and player_id in self.rooms[room_id].clients:
+            del self.rooms[room_id].clients[player_id]
+            if not self.rooms[room_id].clients:
+                del self.rooms[room_id]
+                logger.info(f"[UDP] Room Cleaned: {room_id}")
+
+    async def _cleanup_loop(self):
+        """장기 미응답 유저 자동 정리 (리소스 관리)"""
+        while True:
+            await asyncio.sleep(15)
+            now = time.time()
+            for rid, room in list(self.rooms.items()):
+                for pid, client in list(room.clients.items()):
+                    if now - client.last_seen > 30: # 30초 무응답 시 제거
+                        logger.warning(f"[UDP] Timeout: {pid}")
+                        self._remove_player(pid, rid)
+
+# ==========================================
+# [4] 서버 가동 및 통합 제어
+# ==========================================
 @app.on_event("startup")
-async def startup_event():
+async def on_startup():
     loop = asyncio.get_running_loop()
-    await loop.create_datagram_endpoint(lambda: UDPRelayProtocol(), local_addr=("0.0.0.0", 8080))
+    # UDP 엔드포인트 바인딩
+    await loop.create_datagram_endpoint(
+        lambda: ReliableUDPRelay(),
+        local_addr=("0.0.0.0", 8080)
+    )
+    logger.info("== Perfect Harmony Central Server Fully Operational ==")
+    logger.info("-> HTTP API: Port 8000")
+    logger.info("-> UDP Relay: Port 8080")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # 고성능 ASGI 서버인 uvicorn으로 FastAPI 가동
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
