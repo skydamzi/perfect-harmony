@@ -138,6 +138,20 @@ public class GameStarter : MonoBehaviour
     private void SetupRhythmGameManagerComponent(RhythmGameManager rhythmManager)
     {
         if (rhythmManager.beatsPerMinute <= 0) rhythmManager.beatsPerMinute = 120f;
+        
+        // AudioSource 자동 추가 및 연결
+        if (rhythmManager.audioSource == null)
+        {
+            rhythmManager.audioSource = rhythmManager.GetComponent<AudioSource>();
+            if (rhythmManager.audioSource == null)
+            {
+                rhythmManager.audioSource = rhythmManager.gameObject.AddComponent<AudioSource>();
+            }
+        }
+        
+        // 기본 오디오 설정
+        rhythmManager.audioSource.playOnAwake = false;
+        rhythmManager.audioSource.loop = false;
     }
 
     private void SetupNetworkManagers()

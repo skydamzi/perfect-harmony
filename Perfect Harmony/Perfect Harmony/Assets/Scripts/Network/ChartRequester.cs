@@ -64,6 +64,23 @@ public class ChartRequester : MonoBehaviour
         isAnalyzing = true;
         StartCoroutine(RotateSpinner());
 
+        // [핵심 추가] 실제 재생을 위해 로컬 오디오 파일을 AudioClip으로 로드합니다.
+        string fileUrl = "file://" + path;
+        using (UnityWebRequest clipWww = UnityWebRequestMultimedia.GetAudioClip(fileUrl, AudioType.MPEG))
+        {
+            if (statusText != null) statusText.text = "Loading audio data...";
+            yield return clipWww.SendWebRequest();
+            if (clipWww.result == UnityWebRequest.Result.Success)
+            {
+                targetAudioClip = DownloadHandlerAudioClip.GetContent(clipWww);
+                Debug.Log("[ChartRequester] AudioClip loaded successfully.");
+            }
+            else
+            {
+                Debug.LogWarning("[ChartRequester] Failed to load AudioClip: " + clipWww.error);
+            }
+        }
+
         byte[] audioData = System.IO.File.ReadAllBytes(path);
         WWWForm form = new WWWForm();
         form.AddBinaryData("file", audioData, "song.wav");
