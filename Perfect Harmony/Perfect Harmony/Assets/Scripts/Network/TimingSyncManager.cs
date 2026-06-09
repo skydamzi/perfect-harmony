@@ -57,14 +57,25 @@ public class TimingSyncManager : MonoBehaviour
 
     private void ProcessPrecisionSync(MessagePacket p, double arrivalTimestamp)
     {
-        // RTT 계산 (시스템 틱 기준)
-        double rtt = (double)(System.DateTime.UtcNow.Ticks - p.systemTimestamp) / 10000000.0;
-        packetExchangeLatency = (float)(rtt * 1000.0);
+        // T1: 발신 시각 (Client), T4: 수신 시각 (Client)
+        // T2: 서버 수신 시각 (p.startTime), T3: 서버 발신 시각 (p.relayTimestamp)
+        
+        double t1 = (double)p.systemTimestamp / 10000000.0;
+        double t4 = (double)System.DateTime.UtcNow.Ticks / 10000000.0;
+        
+        double rtt = t4 - t1;
+        double serverProcessing = p.relayTimestamp - p.startTime;
+        
+        // 순수 네트워크 왕복 시간 (지연시간)
+        double networkRtt = Mathf.Max(0, (float)(rtt - serverProcessing));
+        packetExchangeLatency = (float)(networkRtt * 1000.0);
 
-        // NTP 공식 적용
-        // arrivalTimestamp가 0이면(배경 스레드 측정 안됨) realtimeSinceStartup 사용
+        // NTP 공식 기반 정밀 동기화
+        // localRecvTime (T4의 로컬 realtimeSinceStartup)
         double localRecvTime = (arrivalTimestamp > 0) ? arrivalTimestamp : (double)Time.realtimeSinceStartup;
-        double estimatedServerNow = p.relayTimestamp + (rtt / 2.0);
+        
+        // 서버의 현재 시각 추정 (T4 시점) = T3 + (네트워크 편도 지연)
+        double estimatedServerNow = p.relayTimestamp + (networkRtt / 2.0);
         double currentOffset = estimatedServerNow - localRecvTime;
 
         offsetHistory.Add(currentOffset);
