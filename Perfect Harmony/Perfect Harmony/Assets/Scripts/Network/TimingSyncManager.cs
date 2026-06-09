@@ -57,26 +57,23 @@ public class TimingSyncManager : MonoBehaviour
 
     private void ProcessPrecisionSync(MessagePacket p, double arrivalTimestamp)
     {
-        // T1: 발신 시각 (Client), T4: 수신 시각 (Client)
-        // T2: 서버 수신 시각 (p.startTime), T3: 서버 발신 시각 (p.relayTimestamp)
-        
+        // 모든 계산은 double 정밀도의 초(seconds) 단위로 통일
         double t1 = (double)p.systemTimestamp / 10000000.0;
         double t4 = (double)System.DateTime.UtcNow.Ticks / 10000000.0;
         
-        double rtt = t4 - t1;
-        double serverProcessing = p.relayTimestamp - p.startTime;
-        
-        // 순수 네트워크 왕복 시간 (지연시간)
-        double networkRtt = Mathf.Max(0, (float)(rtt - serverProcessing));
-        packetExchangeLatency = (float)(networkRtt * 1000.0);
+        // 서버에서 온 T2, T3 (이미 초 단위임)
+        double t2 = p.startTime;
+        double t3 = p.relayTimestamp;
 
-        // NTP 공식 기반 정밀 동기화
-        // localRecvTime (T4의 로컬 realtimeSinceStartup)
-        double localRecvTime = (arrivalTimestamp > 0) ? arrivalTimestamp : (double)Time.realtimeSinceStartup;
+        double rtt = t4 - t1;
+        double serverProcessing = t3 - t2;
         
-        // 서버의 현재 시각 추정 (T4 시점) = T3 + (네트워크 편도 지연)
-        double estimatedServerNow = p.relayTimestamp + (networkRtt / 2.0);
-        double currentOffset = estimatedServerNow - localRecvTime;
+        // 순수 네트워크 지연 (편도)
+        double networkLatency = Mathf.Max(0, (float)((rtt - serverProcessing) / 2.0));
+        packetExchangeLatency = (float)(networkLatency * 1000.0 * 2.0);
+
+        // NTP 공식: Offset = ((T2 - T1) + (T3 - T4)) / 2
+        double currentOffset = ((t2 - t1) + (t3 - t4)) / 2.0;
 
         offsetHistory.Add(currentOffset);
         if (offsetHistory.Count > 15) offsetHistory.RemoveAt(0);
@@ -86,6 +83,7 @@ public class TimingSyncManager : MonoBehaviour
         networkTimeOffset = sum / offsetHistory.Count;
         
         syncCount++;
+        // Debug.Log($"[Sync] RTT: {rtt:F4}s, Proc: {serverProcessing:F4}s, Offset: {networkTimeOffset:F4}s");
     }
 
     public double GetAdjustedServerTime()
