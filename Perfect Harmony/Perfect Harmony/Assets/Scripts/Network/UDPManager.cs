@@ -13,6 +13,7 @@ public class UDPManager : MonoBehaviour
     private Thread receiveThread;
     private bool isRunning = false;
     private System.Diagnostics.Stopwatch netStopwatch;
+    private double baselineOffset; // Time.realtimeSinceStartup at the moment stopwatch started
 
     // Struct to hold raw byte data and sender info
     private struct PacketInfo
@@ -47,6 +48,7 @@ public class UDPManager : MonoBehaviour
             // Start thread-safe stopwatch for high-precision timing
             netStopwatch = new System.Diagnostics.Stopwatch();
             netStopwatch.Start();
+            baselineOffset = (double)Time.realtimeSinceStartup;
         }
     }
 
@@ -198,7 +200,7 @@ public class UDPManager : MonoBehaviour
                 if (data != null && data.Length > 0)
                 {
                     // THREAD SAFETY: Use Stopwatch instead of Time.realtimeSinceStartup
-                    double now = netStopwatch.Elapsed.TotalSeconds;
+                    double now = baselineOffset + netStopwatch.Elapsed.TotalSeconds;
                     lock (queueLock)
                     {
                         packetQueue.Enqueue(new PacketInfo { 

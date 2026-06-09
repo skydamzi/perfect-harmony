@@ -49,7 +49,7 @@ public class TimingSyncManager : MonoBehaviour
     {
         if (!string.IsNullOrEmpty(p.roomId) && p.roomId != mpManager.currentRoomId && p.roomId != "Global") return;
 
-        if (p.type == PacketType.Ping && p.relayTimestamp > 0)
+        if (p.type == PacketType.Ping && p.relayTimestamp > 0 && p.playerId == mpManager.localPlayerId)
         {
             ProcessPrecisionSync(p, arrivalTimestamp);
         }
