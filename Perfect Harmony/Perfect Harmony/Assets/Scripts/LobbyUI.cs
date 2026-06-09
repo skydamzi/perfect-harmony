@@ -10,6 +10,9 @@ public class LobbyUI : MonoBehaviour
     public Button createGameButton;
     public Button joinGameButton;
     public Button startGameButton; // Added for starting the game
+    [Header("Instrument Selection")]
+    public Button pianoSelectButton;
+    public Button drumSelectButton;
     public Text statusText;
     public GameObject lobbyPanel;
     public GameObject gamePanel;
@@ -38,31 +41,43 @@ public class LobbyUI : MonoBehaviour
     {
         if (mpManager == null) return;
 
-        // Update status text with player count and ready status
+        // Update status text based on whether we are in a room or not
         if (statusText != null)
         {
-            int readyCount = 0;
-            foreach (var p in mpManager.connectedPlayers.Values)
+            if (mpManager.currentRoomId == "Lobby")
             {
-                if (p.isReady) readyCount++;
+                statusText.text = "Welcome! Please Create or Join a Game.";
             }
-            statusText.text = $"Players: {mpManager.connectedPlayers.Count}/2 | Ready: {readyCount}/2";
+            else
+            {
+                int readyCount = 0;
+                foreach (var p in mpManager.connectedPlayers.Values)
+                {
+                    if (p.isReady) readyCount++;
+                }
+                statusText.text = $"Players: {mpManager.connectedPlayers.Count}/2 | Ready: {readyCount}/2";
+            }
         }
 
         // Control the "Ready / Start" button
         if (startGameButton != null)
         {
-            bool enoughPlayers = mpManager.connectedPlayers.Count >= 2;
+            // Always keep the button visible as per user request
+            startGameButton.gameObject.SetActive(true);
             
+            Text btnText = startGameButton.GetComponentInChildren<Text>();
+            Image btnImage = startGameButton.GetComponent<Image>();
+            bool enoughPlayers = mpManager.connectedPlayers.Count >= 2;
+
             if (!enoughPlayers)
             {
-                startGameButton.gameObject.SetActive(false);
+                // State 0: Not enough players
+                startGameButton.interactable = false;
+                if (btnText != null) btnText.text = "Waiting for Players...";
+                if (btnImage != null) btnImage.color = Color.gray;
                 return;
             }
 
-            startGameButton.gameObject.SetActive(true);
-            Text btnText = startGameButton.GetComponentInChildren<Text>();
-            
             // Check local player's ready state
             bool localReady = false;
             if (mpManager.connectedPlayers.ContainsKey(mpManager.localPlayerId))
@@ -82,18 +97,21 @@ public class LobbyUI : MonoBehaviour
                 // State 1: Local player needs to get ready
                 startGameButton.interactable = true;
                 if (btnText != null) btnText.text = "Ready";
+                if (btnImage != null) btnImage.color = Color.white;
             }
             else if (mpManager.IsAuthority && everyoneReady)
             {
-                // State 2: Authority player can start the game
+                // State 2: Authority player can start the game (GREEN!)
                 startGameButton.interactable = true;
                 if (btnText != null) btnText.text = "Start Game";
+                if (btnImage != null) btnImage.color = Color.green;
             }
             else
             {
                 // State 3: Waiting for others
                 startGameButton.interactable = false;
-                if (btnText != null) btnText.text = everyoneReady ? "Starting..." : "Waiting...";
+                if (btnText != null) btnText.text = everyoneReady ? "Starting..." : "Waiting for Others...";
+                if (btnImage != null) btnImage.color = new Color(0.7f, 0.7f, 0.7f); // Slightly dimmed
             }
         }
     }
@@ -104,7 +122,34 @@ public class LobbyUI : MonoBehaviour
         if (joinGameButton) joinGameButton.onClick.AddListener(JoinGame);
         if (startGameButton) startGameButton.onClick.AddListener(OnStartGameClicked);
         
+        // Setup Instrument Selection
+        if (pianoSelectButton) pianoSelectButton.onClick.AddListener(() => SelectInstrument("Piano"));
+        if (drumSelectButton) drumSelectButton.onClick.AddListener(() => SelectInstrument("Drums"));
+        
         UpdateInviteCodeDisplay();
+        UpdateInstrumentUI();
+    }
+
+    private void SelectInstrument(string instrument)
+    {
+        if (mpManager != null)
+        {
+            mpManager.selectedInstrument = instrument;
+            Debug.Log($"Instrument selected: {instrument}");
+            UpdateInstrumentUI();
+        }
+    }
+
+    private void UpdateInstrumentUI()
+    {
+        if (mpManager == null) return;
+
+        // Visual feedback for selection (simple color change as an example)
+        if (pianoSelectButton) 
+            pianoSelectButton.GetComponent<Image>().color = mpManager.selectedInstrument == "Piano" ? Color.green : Color.white;
+        
+        if (drumSelectButton) 
+            drumSelectButton.GetComponent<Image>().color = mpManager.selectedInstrument == "Drums" ? Color.green : Color.white;
     }
     
     private void CreateGame()
@@ -187,15 +232,17 @@ public class LobbyUI : MonoBehaviour
     {
         if (lobbyManager != null && inviteCodeDisplay != null)
         {
+            // Always keep the display object active
+            inviteCodeDisplay.gameObject.SetActive(true);
+            
             string code = lobbyManager.GetInviteCode();
             if (!string.IsNullOrEmpty(code))
             {
                 inviteCodeDisplay.text = "Host IP: " + code;
-                inviteCodeDisplay.gameObject.SetActive(true);
             }
             else
             {
-                inviteCodeDisplay.gameObject.SetActive(false);
+                inviteCodeDisplay.text = "Host IP: (Not Created)";
             }
         }
     }

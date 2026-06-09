@@ -10,6 +10,7 @@ public class MultiplayerManager : MonoBehaviour
 
     [Header("Network Settings")]
     public string currentRoomId = "Lobby";
+    public string selectedInstrument = "Piano"; // Added for instrument selection
     public UDPManager udpManager;
     public string localPlayerId;
 

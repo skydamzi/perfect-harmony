@@ -5,7 +5,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 
-// ¼­¹ö JSON Æ÷¸Ë ¸ÅÇÎ ±¸Á¶
 [Serializable]
 public class InstrumentTracks
 {
@@ -23,29 +22,18 @@ public class ServerResponse
 
 public class ChartRequester : MonoBehaviour
 {
-    // ÇüÀÌ ÀÎ½ºÆåÅÍ¿¡¼­ µş±ï ¼±ÅÃÇÒ ¼ö ÀÖ´Â ¿­°ÅÇü Á¤ÀÇ
     public enum SelectedInstrument { Drums, Bass, Piano }
 
-    [Header("[ °³¹ßÀÚ Àü¿ë ¿¡µğÅÍ ¼³Á¤ ]")]
-    [Tooltip("ÀÎ°ÔÀÓ ¹öÆ° ¾È ´©¸£°í ÀÎ½ºÆåÅÍ¿¡¼­ °í¸¥ ¾Ç±â·Î ¹Ù·Î ½ÃÀÛÇÏ·Á¸é Ã¼Å©!")]
-    public bool useInspectorSelection = false;
-    public SelectedInstrument testInstrument = SelectedInstrument.Drums; // ÀÎ½ºÆåÅÍ ³ëÃâ º¯¼ö
-
-    [Header("[ ±âÁ¸ ¼­¹ö ¼³Á¤ ]")]
+    [Header("[ AI Analysis Settings ]")]
     public string url = "http://116.127.190.78:8000/generate-chart";
     public AudioClip targetAudioClip;
 
-    [Header("UI ¿¬Ãâ °ü·Ã")]
+    [Header("UI References")]
     public GameObject loadingPanel;
     public RectTransform panelContent;
     public Text statusText;
     public RectTransform loadingSpinner;
-
-    [Header("[¾Ç±â ¼±ÅÃ UI - ÀÎ°ÔÀÓ¿ë]")]
-    public GameObject instrumentSelectPanel;
-    public Button drumButton;
-    public Button bassButton;
-    public Button pianoButton;
+    public GameObject instrumentSelectPanel; // Kept for backward compatibility but bypassed
 
     private bool isAnalyzing = false;
     private ServerResponse fullServerData;
@@ -56,11 +44,6 @@ public class ChartRequester : MonoBehaviour
         if (loadingPanel != null) loadingPanel.SetActive(false);
         if (instrumentSelectPanel != null) instrumentSelectPanel.SetActive(false);
 
-        // ÀÎ°ÔÀÓ ¹öÆ° ¸®½º³Ê ¿¬°á
-        if (drumButton != null) drumButton.onClick.AddListener(() => OnSelectInstrument("Drums"));
-        if (bassButton != null) bassButton.onClick.AddListener(() => OnSelectInstrument("Bass"));
-        if (pianoButton != null) pianoButton.onClick.AddListener(() => OnSelectInstrument("Piano"));
-
         string path = System.IO.Path.Combine(Application.streamingAssetsPath, "song.mp3");
         if (System.IO.File.Exists(path))
         {
@@ -68,14 +51,14 @@ public class ChartRequester : MonoBehaviour
         }
         else
         {
-            Debug.LogError($"ÆÄÀÏÀÌ ¾ø¾î! °æ·Î È®ÀÎ: {path}");
+            Debug.LogError($"Audio file not found at: {path}");
         }
     }
 
     IEnumerator AnalyzeAndPlay(string path, AudioClip clip)
     {
         if (loadingPanel != null) loadingPanel.SetActive(true);
-        if (statusText != null) statusText.text = "¼­¹ö ¿¬°á Áß...";
+        if (statusText != null) statusText.text = "Initializing analysis...";
         yield return StartCoroutine(ScaleRoutine(Vector3.zero, Vector3.one, 0.4f));
 
         isAnalyzing = true;
@@ -87,34 +70,31 @@ public class ChartRequester : MonoBehaviour
 
         using (UnityWebRequest www = UnityWebRequest.Post(url, form))
         {
-            if (statusText != null) statusText.text = "AI Ã¤º¸ ºĞ¼® Áß...\n(CPU ±¸µ¿À¸·Î ¾à 1ºĞ ¼Ò¿ä)";
+            if (statusText != null) statusText.text = "AI analyzing audio...\n(May take up to 1 minute)";
             yield return www.SendWebRequest();
 
             if (www.result == UnityWebRequest.Result.Success)
             {
-                if (statusText != null) statusText.text = "ºĞ¼® ¿Ï·á!";
+                if (statusText != null) statusText.text = "Analysis Complete!";
                 isAnalyzing = false;
 
                 fullServerData = JsonUtility.FromJson<ServerResponse>(www.downloadHandler.text);
 
-                // ¡Ú º¯°æ Æ÷ÀÎÆ®: ÀÎ½ºÆåÅÍ ¿ì¼± ¸ğµå°¡ ÄÑÁ® ÀÖÀ¸¸é UI ¾È ¶ç¿ì°í ¹Ù·Î ´ÙÀÌ·ºÆ® ÆĞ½º!
-                if (useInspectorSelection)
+                // MultiplayerManagerì—ì„œ ì„ íƒëœ ì•…ê¸° ì •ë³´ ê°€ì ¸ì˜¤ê¸° (ì—†ìœ¼ë©´ Piano ê¸°ë³¸)
+                string selected = "Piano";
+                if (MultiplayerManager.Instance != null)
                 {
-                    Debug.Log($"[¿¡µğÅÍ Å×½ºÆ®] ÀÎ½ºÆåÅÍ¿¡ ¼³Á¤µÈ {testInstrument} Æ®·¢À¸·Î Áï½Ã ½ÃÀÛÇÕ´Ï´Ù.");
-                    OnSelectInstrument(testInstrument.ToString());
+                    selected = MultiplayerManager.Instance.selectedInstrument;
                 }
-                else
-                {
-                    // ²¨Á®ÀÖÀ¸¸é Æò¼Ò´ë·Î À¯ÀúÇÑÅ× ÀÎ°ÔÀÓ ¹öÆ° ÆË¾÷ ¶ç¿ò
-                    if (loadingSpinner != null) loadingSpinner.gameObject.SetActive(false);
-                    if (instrumentSelectPanel != null) instrumentSelectPanel.SetActive(true);
-                }
+
+                Debug.Log($"[Auto-Select] Lobby choice: {selected}. Starting game...");
+                OnSelectInstrument(selected);
             }
             else
             {
-                if (statusText != null) statusText.text = "ºĞ¼® ½ÇÆĞ¤Ğ";
+                if (statusText != null) statusText.text = "Analysis Failed";
                 isAnalyzing = false;
-                Debug.LogError("¼­ver ¿¬°á ½ÇÆĞ: " + www.error);
+                Debug.LogError("Server Error: " + www.error);
                 yield return new WaitForSeconds(1f);
                 if (loadingPanel != null) loadingPanel.SetActive(false);
             }
