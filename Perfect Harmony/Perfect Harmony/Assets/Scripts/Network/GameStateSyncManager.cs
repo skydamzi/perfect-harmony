@@ -93,19 +93,20 @@ public class GameStateSyncManager : MonoBehaviour
 
         if (rhythmGameManager != null)
         {
-            float currentTime = Time.realtimeSinceStartup;
+            // [시간 통일] Time.realtimeSinceStartup 대신 서버 시간을 사용합니다.
+            double currentServerTime = TimingSyncManager.Instance.GetCurrentServerTime();
             float serverSongPos = packet.songPosition;
-            float calculatedStartTime = currentTime - serverSongPos;
+            double calculatedStartTime = currentServerTime - (double)serverSongPos;
 
             if (!hasSyncedStart)
             {
-                rhythmGameManager.actualSongStartTime = (double)calculatedStartTime;
-                targetSongStartTime = calculatedStartTime;
+                rhythmGameManager.actualSongStartTime = calculatedStartTime;
+                targetSongStartTime = (float)calculatedStartTime;
                 hasSyncedStart = true;
             }
             else
             {
-                targetSongStartTime = calculatedStartTime;
+                targetSongStartTime = (float)calculatedStartTime;
             }
         }
     }
@@ -155,12 +156,12 @@ public class GameStateSyncManager : MonoBehaviour
 
     private void Update()
     {
-        // 카운트다운 중에는 개입하지 않음 (RhythmGameManager가 처리)
+        // 중앙 서버의 절대 시각 동기화를 사용하므로 P2P 상태 동기화에 따른 클럭 보정은 비활성화
+        /*
         if (rhythmGameManager != null && (rhythmGameManager.isCountingDown || !rhythmGameManager.isPlaying)) return;
 
         if (hasSyncedStart && rhythmGameManager != null && mpManager != null)
         {
-            // 서버 시간을 기준으로 계산된 실제 곡 시작 시각과 타겟 시각 동기화
             float currentActual = (float)rhythmGameManager.targetServerStartTime;
             if (Mathf.Abs(currentActual - targetSongStartTime) > 0.5f)
             {
@@ -172,6 +173,7 @@ public class GameStateSyncManager : MonoBehaviour
                 rhythmGameManager.targetServerStartTime = (double)lerped;
             }
         }
+        */
     }
 
     public void SendNoteSpawn(MessagePacket noteData)

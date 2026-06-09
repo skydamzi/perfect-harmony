@@ -13,19 +13,31 @@ public class MultiplayerManager : MonoBehaviour
 
     [Header("Network")]
     public UDPManager udpManager;
-    public Dictionary<string, PlayerData> players = new Dictionary<string, PlayerData>();
+    public string selectedInstrument = "Piano"; // [복구]
+    public Dictionary<string, PlayerData> connectedPlayers = new Dictionary<string, PlayerData>(); // [복구] 명칭 변경
 
     [Header("State")]
     public MultiplayerState state = MultiplayerState.Lobby;
 
+    public bool gameStarted 
+    { 
+        get { return state != MultiplayerState.Lobby; }
+        set { if (value) state = MultiplayerState.Loading; else state = MultiplayerState.Lobby; }
+    }
+
     public class PlayerData
     {
-        public string id;
+        public string playerId;   // [복구] 기존 명칭
+        public string playerName; // [복구] 기존 명칭
         public bool isReady;
         public bool isChartReady;
         public int score;
         public int combo;
-        public PlayerData(string id) { this.id = id; }
+
+        public PlayerData(string id) { 
+            this.playerId = id; 
+            this.playerName = "Player_" + id.Substring(0, Mathf.Min(4, id.Length));
+        }
     }
 
     private void Awake()
@@ -36,11 +48,11 @@ public class MultiplayerManager : MonoBehaviour
 
     private void Start()
     {
-        if (udpManager == null) udpManager = FindFirstObjectByType<UDPManager>();
+        if (udpManager == null) udpManager = FindFirstObjectByType<UDPManager>() ?? new GameObject("UDPManager").AddComponent<UDPManager>();
         udpManager.OnPacketReceived += HandlePacket;
         
         localPlayerId = SystemInfo.deviceUniqueIdentifier + "_" + Random.Range(0, 10000);
-        players.Add(localPlayerId, new PlayerData(localPlayerId));
+        connectedPlayers.Add(localPlayerId, new PlayerData(localPlayerId));
     }
 
     private void Update()
@@ -56,19 +68,20 @@ public class MultiplayerManager : MonoBehaviour
     {
         get
         {
-            List<string> ids = new List<string>(players.Keys);
+            if (connectedPlayers.Count <= 1) return true;
+            List<string> ids = new List<string>(connectedPlayers.Keys);
             ids.Sort();
-            return ids.Count > 0 && ids[0] == localPlayerId;
+            return ids[0] == localPlayerId;
         }
     }
 
     private void CheckAndRequestStart()
     {
         bool allReady = true;
-        foreach (var p in players.Values) if (!p.isChartReady) allReady = false;
+        foreach (var p in connectedPlayers.Values) if (!p.isChartReady) allReady = false;
 
         // 동기화도 완료되어야 함
-        if (allReady && TimingSyncManager.Instance.IsSynced && players.Count >= 2)
+        if (allReady && TimingSyncManager.Instance.IsSynced && connectedPlayers.Count >= 2)
         {
             // 서버에게 "우리 이제 시작할게!" 라고 요청
             MessagePacket p = new MessagePacket(PacketType.GameStart, localPlayerId, currentRoomId);
@@ -84,18 +97,18 @@ public class MultiplayerManager : MonoBehaviour
         {
             case PacketType.Connect:
             case PacketType.JoinRoom:
-                if (!players.ContainsKey(p.playerId))
+                if (!connectedPlayers.ContainsKey(p.playerId))
                 {
-                    players[p.playerId] = new PlayerData(p.playerId);
+                    connectedPlayers[p.playerId] = new PlayerData(p.playerId);
                     udpManager.SendPacket(new MessagePacket(PacketType.Connect, localPlayerId, currentRoomId));
                 }
                 break;
 
             case PacketType.PlayerReady:
-                if (players.ContainsKey(p.playerId))
+                if (connectedPlayers.ContainsKey(p.playerId))
                 {
-                    if (SceneManager.GetActiveScene().name == "Playing") players[p.playerId].isChartReady = true;
-                    else players[p.playerId].isReady = true;
+                    if (SceneManager.GetActiveScene().name == "Playing") connectedPlayers[p.playerId].isChartReady = true;
+                    else connectedPlayers[p.playerId].isReady = true;
                 }
                 break;
 
@@ -112,6 +125,18 @@ public class MultiplayerManager : MonoBehaviour
                 }
                 break;
                 
+            case PacketType.PlayerScore:
+                if (connectedPlayers.ContainsKey(p.playerId))
+                {
+                    connectedPlayers[p.playerId].score = p.score;
+                    connectedPlayers[p.playerId].combo = p.combo;
+                }
+                break;
+
+            case PacketType.PlayerInput:
+                // 1대1 상황에서 상대방의 입력 시각 등을 시각화할 때 사용 가능
+                break;
+
             case PacketType.NoteHit:
                 var input = FindFirstObjectByType<MultiplayerInputHandler>();
                 if (input) input.HandleRemoteNoteHit(p.lane, (TimingResult)p.timingResult, p.beatNumber);
@@ -130,11 +155,33 @@ public class MultiplayerManager : MonoBehaviour
         }
     }
 
+    // --- [복구] API for other scripts ---
+
+    public int GetPlayerSlot()
+    {
+        List<string> ids = new List<string>(connectedPlayers.Keys);
+        ids.Sort();
+        for (int i = 0; i < ids.Count; i++) {
+            if (ids[i] == localPlayerId) return i;
+        }
+        return 0;
+    }
+
+    public bool HasRequiredPlayers()
+    {
+        return connectedPlayers.Count >= 2;
+    }
+
+    public void SendNoteHit(int lane, TimingResult res, float beatNumber)
+    {
+        udpManager.SendPacket(MessagePacket.CreateHit(localPlayerId, currentRoomId, lane, (int)res, beatNumber));
+    }
+
     public void JoinRoom(string roomId)
     {
         currentRoomId = roomId;
-        players.Clear();
-        players.Add(localPlayerId, new PlayerData(localPlayerId));
+        connectedPlayers.Clear();
+        connectedPlayers.Add(localPlayerId, new PlayerData(localPlayerId));
         state = MultiplayerState.Lobby;
         udpManager.SendPacket(new MessagePacket(PacketType.JoinRoom, localPlayerId, currentRoomId));
     }
@@ -142,7 +189,7 @@ public class MultiplayerManager : MonoBehaviour
     public void SendChartReady()
     {
         state = MultiplayerState.Ready;
-        players[localPlayerId].isChartReady = true;
+        if (connectedPlayers.ContainsKey(localPlayerId)) connectedPlayers[localPlayerId].isChartReady = true;
         CancelInvoke("RepeatReady");
         InvokeRepeating("RepeatReady", 0f, 0.5f);
     }
@@ -150,6 +197,30 @@ public class MultiplayerManager : MonoBehaviour
     private void RepeatReady()
     {
         if (state != MultiplayerState.Ready) { CancelInvoke("RepeatReady"); return; }
+        udpManager.SendPacket(new MessagePacket(PacketType.PlayerReady, localPlayerId, currentRoomId));
+    }
+
+    public void SendGameStartRequest()
+    {
+        if (!IsAuthority) return;
+        udpManager.SendPacket(new MessagePacket(PacketType.GameStart, localPlayerId, currentRoomId));
+    }
+
+    public void SendPlayerInput(int lane, float time)
+    {
+        MessagePacket p = new MessagePacket(PacketType.PlayerInput, localPlayerId, currentRoomId);
+        p.lane = lane; p.hitTime = time;
+        udpManager.SendPacket(p);
+    }
+
+    public void SendPlayerScore(int score, int combo, TimingResult res)
+    {
+        udpManager.SendPacket(MessagePacket.CreateScore(localPlayerId, currentRoomId, score, combo, (int)res));
+    }
+
+    public void SendPlayerReady()
+    {
+        if (connectedPlayers.ContainsKey(localPlayerId)) connectedPlayers[localPlayerId].isReady = true;
         udpManager.SendPacket(new MessagePacket(PacketType.PlayerReady, localPlayerId, currentRoomId));
     }
 }
