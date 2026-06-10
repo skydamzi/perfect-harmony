@@ -431,16 +431,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 23f12e90a7cc961469e23bafbb8a4c58, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  selectedSong: {fileID: 0}
   audioSource: {fileID: 92271128}
+  selectedSong: {fileID: 0}
   isPlaying: 0
   isCountingDown: 0
+  targetServerStartTime: 0
   songPosition: 0
-  songStartTime: 0
   actualSongStartTime: 0
   beatsPerMinute: 120
   beatDuration: 0.25
-  beatsPerMeasure: 4
   spawnOffset: 0.5
   startDelay: 3
   perfectWindow: 0.03
@@ -476,7 +475,7 @@ AudioSource:
   serializedVersion: 4
   OutputAudioMixerGroup: {fileID: 0}
   m_audioClip: {fileID: 0}
-  m_Resource: {fileID: 8300000, guid: 35f75b3f74e58ef44b753a9f55ea6b58, type: 3}
+  m_Resource: {fileID: 8300000, guid: c0e325593728bdd4d95f6926d96cd9ba, type: 3}
   m_PlayOnAwake: 0
   m_Volume: 1
   m_Pitch: 1
@@ -3259,8 +3258,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5ea10f107e0efed4389a8e83d344d95f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  useInspectorSelection: 1
-  testInstrument: 2
   url: http://116.127.190.78:8000/generate-chart
   targetAudioClip: {fileID: 0}
   loadingPanel: {fileID: 0}
@@ -3268,9 +3265,6 @@ MonoBehaviour:
   statusText: {fileID: 1066537001}
   loadingSpinner: {fileID: 335144135}
   instrumentSelectPanel: {fileID: 0}
-  drumButton: {fileID: 0}
-  bassButton: {fileID: 0}
-  pianoButton: {fileID: 0}
 --- !u!4 &1335009701
 Transform:
   m_ObjectHideFlags: 0
