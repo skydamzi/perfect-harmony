@@ -143,7 +143,8 @@ public class RhythmGameManager : MonoBehaviour
         NoteSpawner spawner = FindFirstObjectByType<NoteSpawner>();
         if (spawner != null && song.chartData != null)
         {
-            spawner.spawnEvents = new List<SpawnEvent>(song.chartData);
+            spawner.p1SpawnEvents = new List<SpawnEvent>(song.chartData);
+            spawner.p2SpawnEvents = new List<SpawnEvent>(song.chartData); // Default both to local chart for single play
             Debug.Log($"[LoadSong] {song.chartData.Count} notes injected into NoteSpawner.");
         }
     }

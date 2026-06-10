@@ -22,6 +22,7 @@ public class MessagePacket
     public int score;
     public int combo;
     public int timingResult;
+    public string instrument; // Selected instrument (Piano, Drums, etc.)
     
     // State fields
     public float songPosition;

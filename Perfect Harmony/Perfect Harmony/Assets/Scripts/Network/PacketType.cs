@@ -22,6 +22,7 @@ public enum PacketType
     PlayerInput,
     PlayerScore,
     PlayerReady,
+    InstrumentSelect,
     
     // Sync related
     SyncTime,

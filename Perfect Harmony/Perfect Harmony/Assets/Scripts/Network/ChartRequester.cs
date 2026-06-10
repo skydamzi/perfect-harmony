@@ -97,15 +97,8 @@ public class ChartRequester : MonoBehaviour
 
                 fullServerData = JsonUtility.FromJson<ServerResponse>(www.downloadHandler.text);
 
-                // MultiplayerManager에서 선택된 악기 정보 가져오기 (없으면 Piano 기본)
-                string selected = "Piano";
-                if (MultiplayerManager.Instance != null)
-                {
-                    selected = MultiplayerManager.Instance.selectedInstrument;
-                }
-
-                Debug.Log($"[Auto-Select] Lobby choice: {selected}. Starting game...");
-                OnSelectInstrument(selected);
+                // Load charts for all players
+                LoadAllPlayerCharts();
             }
             else
             {
@@ -118,34 +111,71 @@ public class ChartRequester : MonoBehaviour
         }
     }
 
-    public void OnSelectInstrument(string instrumentType)
+    private void LoadAllPlayerCharts()
     {
         if (fullServerData == null) return;
 
-        List<SpawnEvent> selectedChartData = null;
+        string localInstrument = "Piano";
+        string remoteInstrument = "Piano";
 
-        switch (instrumentType)
+        if (MultiplayerManager.Instance != null)
         {
-            case "Drums":
-                selectedChartData = fullServerData.tracks.drums;
-                break;
-            case "Bass":
-                selectedChartData = fullServerData.tracks.bass;
-                break;
-            case "Piano":
-                selectedChartData = fullServerData.tracks.piano;
-                break;
+            localInstrument = MultiplayerManager.Instance.selectedInstrument;
+            
+            // Find remote player's instrument
+            foreach (var player in MultiplayerManager.Instance.connectedPlayers.Values)
+            {
+                if (player.playerId != MultiplayerManager.Instance.localPlayerId)
+                {
+                    remoteInstrument = player.selectedInstrument;
+                    break;
+                }
+            }
         }
 
+        Debug.Log($"[ChartRequester] Local: {localInstrument}, Remote: {remoteInstrument}");
+
+        List<SpawnEvent> localChart = GetChartForInstrument(localInstrument);
+        List<SpawnEvent> remoteChart = GetChartForInstrument(remoteInstrument);
+
         SongData aiSong = ScriptableObject.CreateInstance<SongData>();
-        aiSong.songTitle = $"AI Generated Chart ({instrumentType})";
+        aiSong.songTitle = $"AI Generated Chart (L:{localInstrument} R:{remoteInstrument})";
         aiSong.beatsPerMinute = fullServerData.beatsPerMinute;
         aiSong.audioClip = targetAudioClip;
-        aiSong.chartData = selectedChartData;
+        aiSong.chartData = localChart; // Still keep local chart for single-play compatibility
         aiSong.noteSpeed = 2.0f;
 
         RhythmGameManager.Instance.LoadSong(aiSong);
+
+        // Inject both charts into NoteSpawner
+        NoteSpawner spawner = FindFirstObjectByType<NoteSpawner>();
+        if (spawner != null)
+        {
+            spawner.p1SpawnEvents = new List<SpawnEvent>(localChart);
+            spawner.p2SpawnEvents = new List<SpawnEvent>(remoteChart);
+            Debug.Log($"[ChartRequester] Injected charts: P1({localChart.Count}), P2({remoteChart.Count})");
+        }
+
         StartCoroutine(FinishAndStartGame());
+    }
+
+    private List<SpawnEvent> GetChartForInstrument(string instrumentType)
+    {
+        if (fullServerData == null) return new List<SpawnEvent>();
+
+        switch (instrumentType)
+        {
+            case "Drums": return fullServerData.tracks.drums;
+            case "Bass": return fullServerData.tracks.bass;
+            case "Piano": return fullServerData.tracks.piano;
+            default: return fullServerData.tracks.piano;
+        }
+    }
+
+    // Deprecated but kept for compatibility
+    public void OnSelectInstrument(string instrumentType)
+    {
+        LoadAllPlayerCharts();
     }
 
     private IEnumerator FinishAndStartGame()

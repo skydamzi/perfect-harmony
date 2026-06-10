@@ -134,7 +134,7 @@ public class LobbyUI : MonoBehaviour
     {
         if (mpManager != null)
         {
-            mpManager.selectedInstrument = instrument;
+            mpManager.SendInstrumentSelect(instrument);
             Debug.Log($"Instrument selected: {instrument}");
             UpdateInstrumentUI();
         }

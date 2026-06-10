@@ -124,9 +124,9 @@ public class GameStateSyncManager : MonoBehaviour
         if (noteSpawner == null) noteSpawner = FindFirstObjectByType<NoteSpawner>();
         if (noteSpawner == null || rhythmGameManager == null) return;
 
-        int baseLane = noteData.lane;
-        CreateClientNoteInstance(baseLane, noteData);
-        CreateClientNoteInstance(baseLane + 4, noteData);
+        // Use the lane as-is from the packet
+        int lane = noteData.lane;
+        CreateClientNoteInstance(lane, noteData);
     }
 
     private void CreateClientNoteInstance(int laneIndex, MessagePacket noteData)

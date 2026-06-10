@@ -181,7 +181,7 @@ public class AutoSetup : MonoBehaviour
         }
 
         // Add some default spawn events if none exist
-        if (noteSpawner.spawnEvents.Count == 0)
+        if (noteSpawner.p1SpawnEvents.Count == 0)
         {
             // Create a simple pattern for 16 beats
             for (int beat = 0; beat < 16; beat++)

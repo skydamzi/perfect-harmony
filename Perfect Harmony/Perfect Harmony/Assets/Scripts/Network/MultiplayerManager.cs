@@ -29,6 +29,7 @@ public class MultiplayerManager : MonoBehaviour
     {
         public string playerId;   // [복구] 기존 명칭
         public string playerName; // [복구] 기존 명칭
+        public string selectedInstrument = "Piano";
         public bool isReady;
         public bool isChartReady;
         public int score;
@@ -53,15 +54,33 @@ public class MultiplayerManager : MonoBehaviour
         
         localPlayerId = SystemInfo.deviceUniqueIdentifier + "_" + Random.Range(0, 10000);
         connectedPlayers.Add(localPlayerId, new PlayerData(localPlayerId));
+        connectedPlayers[localPlayerId].selectedInstrument = selectedInstrument;
     }
 
     private void Update()
     {
         // 호스트는 모두가 차트 준비되었는지 체크
+        if (IsAuthority && (state == MultiplayerState.Ready || state == MultiplayerState.Lobby))
+        {
+            // 주기적으로 내 악기 정보 전송 (동기화 보장)
+            SendInstrumentSelect(selectedInstrument);
+        }
+
         if (IsAuthority && state == MultiplayerState.Ready)
         {
             CheckAndRequestStart();
         }
+    }
+
+    public void SendInstrumentSelect(string instrument)
+    {
+        selectedInstrument = instrument;
+        if (connectedPlayers.ContainsKey(localPlayerId))
+            connectedPlayers[localPlayerId].selectedInstrument = instrument;
+
+        MessagePacket p = new MessagePacket(PacketType.InstrumentSelect, localPlayerId, currentRoomId);
+        p.instrument = instrument;
+        udpManager.SendPacket(p);
     }
 
     public bool IsAuthority
@@ -101,6 +120,16 @@ public class MultiplayerManager : MonoBehaviour
                 {
                     connectedPlayers[p.playerId] = new PlayerData(p.playerId);
                     udpManager.SendPacket(new MessagePacket(PacketType.Connect, localPlayerId, currentRoomId));
+                    // 내 악기 정보도 즉시 전송
+                    SendInstrumentSelect(selectedInstrument);
+                }
+                break;
+
+            case PacketType.InstrumentSelect:
+                if (connectedPlayers.ContainsKey(p.playerId))
+                {
+                    connectedPlayers[p.playerId].selectedInstrument = p.instrument;
+                    Debug.Log($"[MultiplayerManager] Player {p.playerId} selected instrument: {p.instrument}");
                 }
                 break;
 

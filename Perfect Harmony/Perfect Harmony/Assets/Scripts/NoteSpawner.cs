@@ -11,7 +11,8 @@ public class SpawnEvent
 public class NoteSpawner : MonoBehaviour
 {
     [Header("Spawning Settings")]
-    public List<SpawnEvent> spawnEvents;
+    public List<SpawnEvent> p1SpawnEvents = new List<SpawnEvent>();
+    public List<SpawnEvent> p2SpawnEvents = new List<SpawnEvent>();
     public GameObject notePrefab;
 
     [Header("Spawn Positions")]
@@ -19,29 +20,46 @@ public class NoteSpawner : MonoBehaviour
     public Transform[] targetPositions;
 
     private bool isSpawning = false;
-    private int currentEventIndex = 0;
+    private int p1Index = 0;
+    private int p2Index = 0;
 
     void Start()
     {
-        if (spawnEvents == null)
-            spawnEvents = new List<SpawnEvent>();
+        if (p1SpawnEvents == null) p1SpawnEvents = new List<SpawnEvent>();
+        if (p2SpawnEvents == null) p2SpawnEvents = new List<SpawnEvent>();
     }
 
     void Update()
     {
-        // [핵심 수정] isPlaying 뿐만 아니라 isCountingDown 일 때도 노트가 생성되어야 함!
         bool canSpawn = RhythmGameManager.Instance.isPlaying || RhythmGameManager.Instance.isCountingDown;
 
-        if (isSpawning && currentEventIndex < spawnEvents.Count && canSpawn)
+        if (isSpawning && canSpawn)
         {
-            SpawnEvent nextEvent = spawnEvents[currentEventIndex];
-            float nextEventTime = RhythmGameManager.Instance.BeatToTime(nextEvent.beatNumber);
-
-            // 매니저에서 계산해주는 마이너스 값을 포함한 songPosition 사용
-            if (RhythmGameManager.Instance.songPosition + RhythmGameManager.Instance.spawnOffset >= nextEventTime)
+            // Player 1 (Local) Spawning
+            if (p1Index < p1SpawnEvents.Count)
             {
-                SpawnNote(nextEvent);
-                currentEventIndex++;
+                SpawnEvent nextEvent = p1SpawnEvents[p1Index];
+                float nextEventTime = RhythmGameManager.Instance.BeatToTime(nextEvent.beatNumber);
+
+                if (RhythmGameManager.Instance.songPosition + RhythmGameManager.Instance.spawnOffset >= nextEventTime)
+                {
+                    CreateNoteInstance((int)nextEvent.lane, nextEvent);
+                    p1Index++;
+                }
+            }
+
+            // Player 2 (Remote) Spawning
+            if (p2Index < p2SpawnEvents.Count)
+            {
+                SpawnEvent nextEvent = p2SpawnEvents[p2Index];
+                float nextEventTime = RhythmGameManager.Instance.BeatToTime(nextEvent.beatNumber);
+
+                if (RhythmGameManager.Instance.songPosition + RhythmGameManager.Instance.spawnOffset >= nextEventTime)
+                {
+                    // Remote lane is offset by 4
+                    CreateNoteInstance((int)nextEvent.lane + 4, nextEvent);
+                    p2Index++;
+                }
             }
         }
     }
@@ -49,7 +67,8 @@ public class NoteSpawner : MonoBehaviour
     public void StartSpawning()
     {
         isSpawning = true;
-        currentEventIndex = 0;
+        p1Index = 0;
+        p2Index = 0;
     }
 
     public void StopSpawning()
@@ -57,35 +76,10 @@ public class NoteSpawner : MonoBehaviour
         isSpawning = false;
     }
 
+    // Deprecated or redirect to CreateNoteInstance for compatibility
     private void SpawnNote(SpawnEvent spawnEvent)
     {
-        if (notePrefab == null)
-        {
-            Debug.LogError("Note prefab is not assigned!");
-            return;
-        }
-
-        int baseLaneIndex = (int)spawnEvent.lane;
-
-        // Player 1, 2 동시에 소환 (각자 로컬에서 처리)
-        CreateNoteInstance(baseLaneIndex, spawnEvent);
-        int p2LaneIndex = baseLaneIndex + 4;
-        CreateNoteInstance(p2LaneIndex, spawnEvent);
-
-        // [수정] 이제 시간이 완벽하게 동기화되므로, 노트를 일일이 패킷으로 보낼 필요가 없음.
-        // 각자 로컬 차트 데이터를 보고 정확한 시간에 생성하는 것이 더 정확함.
-        /*
-        MultiplayerManager mpManager = FindFirstObjectByType<MultiplayerManager>();
-        GameStateSyncManager gameStateSyncManager = FindFirstObjectByType<GameStateSyncManager>();
-        if (mpManager != null && mpManager.IsAuthority && mpManager.gameStarted)
-        {
-            if (gameStateSyncManager != null)
-            {
-                NoteData noteData = new NoteData(spawnEvent.beatNumber, baseLaneIndex, Time.time);
-                gameStateSyncManager.SendNoteSpawn(noteData);
-            }
-        }
-        */
+        // This function was creating duplicates. Now we handle it in Update separately.
     }
 
     private void CreateNoteInstance(int laneIndex, SpawnEvent spawnEvent)
@@ -105,11 +99,7 @@ public class NoteSpawner : MonoBehaviour
         // 노트 설정
         note.lane = (NoteLane)laneIndex;
         note.beatNumber = spawnEvent.beatNumber;
-
-        // [수정] spawnTime을 Time.time으로 박으면 카운트다운 싱크가 깨질 수 있음.
-        // 노래의 논리적 시간(songPosition)을 기준으로 타겟 도착 시간을 계산하는 게 안전함.
         note.spawnTime = Time.time;
-
         note.targetPosition = targetPos;
         note.spawnPosition = spawnPos;
 
@@ -121,15 +111,19 @@ public class NoteSpawner : MonoBehaviour
         }
     }
 
+    public void ClearSpawnEvents()
+    {
+        p1SpawnEvents.Clear();
+        p2SpawnEvents.Clear();
+    }
+
     public void AddSpawnEvent(float beatNumber, NoteLane lane)
     {
         SpawnEvent newEvent = new SpawnEvent { beatNumber = beatNumber, lane = lane };
-        spawnEvents.Add(newEvent);
-        spawnEvents.Sort((e1, e2) => e1.beatNumber.CompareTo(e2.beatNumber));
-    }
-
-    public void ClearSpawnEvents()
-    {
-        spawnEvents.Clear();
+        p1SpawnEvents.Add(newEvent);
+        p2SpawnEvents.Add(newEvent); // Add to both for default behavior
+        
+        p1SpawnEvents.Sort((e1, e2) => e1.beatNumber.CompareTo(e2.beatNumber));
+        p2SpawnEvents.Sort((e1, e2) => e1.beatNumber.CompareTo(e2.beatNumber));
     }
 }
