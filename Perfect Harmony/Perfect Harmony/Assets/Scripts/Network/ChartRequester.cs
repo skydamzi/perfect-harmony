@@ -115,45 +115,46 @@ public class ChartRequester : MonoBehaviour
     {
         if (fullServerData == null) return;
 
-        string localInstrument = "Piano";
-        string remoteInstrument = "Piano";
+        string hostInstrument = "Piano";
+        string guestInstrument = "Piano";
 
         if (MultiplayerManager.Instance != null)
         {
-            localInstrument = MultiplayerManager.Instance.selectedInstrument;
-            
-            // Find remote player's instrument
-            foreach (var player in MultiplayerManager.Instance.connectedPlayers.Values)
-            {
-                if (player.playerId != MultiplayerManager.Instance.localPlayerId)
-                {
-                    remoteInstrument = player.selectedInstrument;
-                    break;
-                }
-            }
+            // 슬롯 기준으로 악기 찾기 (ID 정렬 시 첫 번째가 호스트)
+            List<string> ids = new List<string>(MultiplayerManager.Instance.connectedPlayers.Keys);
+            ids.Sort();
+
+            if (ids.Count > 0) 
+                hostInstrument = MultiplayerManager.Instance.connectedPlayers[ids[0]].selectedInstrument;
+            if (ids.Count > 1) 
+                guestInstrument = MultiplayerManager.Instance.connectedPlayers[ids[1]].selectedInstrument;
         }
 
-        Debug.Log($"[ChartRequester] Local: {localInstrument}, Remote: {remoteInstrument}");
+        Debug.Log($"[ChartRequester] Slot-based Assignment - Host: {hostInstrument}, Guest: {guestInstrument}");
 
+        List<SpawnEvent> hostChart = GetChartForInstrument(hostInstrument);
+        List<SpawnEvent> guestChart = GetChartForInstrument(guestInstrument);
+
+        // 로컬 플레이어의 악기 정보를 SongData에 담아둠 (호환성 유지)
+        string localInstrument = MultiplayerManager.Instance != null ? MultiplayerManager.Instance.selectedInstrument : "Piano";
         List<SpawnEvent> localChart = GetChartForInstrument(localInstrument);
-        List<SpawnEvent> remoteChart = GetChartForInstrument(remoteInstrument);
 
         SongData aiSong = ScriptableObject.CreateInstance<SongData>();
-        aiSong.songTitle = $"AI Generated Chart (L:{localInstrument} R:{remoteInstrument})";
+        aiSong.songTitle = $"AI Generated Chart (H:{hostInstrument} G:{guestInstrument})";
         aiSong.beatsPerMinute = fullServerData.beatsPerMinute;
         aiSong.audioClip = targetAudioClip;
-        aiSong.chartData = localChart; // Still keep local chart for single-play compatibility
+        aiSong.chartData = localChart; 
         aiSong.noteSpeed = 2.0f;
 
         RhythmGameManager.Instance.LoadSong(aiSong);
 
-        // Inject both charts into NoteSpawner
+        // [핵심 수정] 이제 p1은 항상 호스트(0-3번 라인), p2는 항상 게스트(4-7번 라인)로 고정합니다.
         NoteSpawner spawner = FindFirstObjectByType<NoteSpawner>();
         if (spawner != null)
         {
-            spawner.p1SpawnEvents = new List<SpawnEvent>(localChart);
-            spawner.p2SpawnEvents = new List<SpawnEvent>(remoteChart);
-            Debug.Log($"[ChartRequester] Injected charts: P1({localChart.Count}), P2({remoteChart.Count})");
+            spawner.p1SpawnEvents = new List<SpawnEvent>(hostChart);
+            spawner.p2SpawnEvents = new List<SpawnEvent>(guestChart);
+            Debug.Log($"[ChartRequester] Injected charts: P1(Host:{hostChart.Count}), P2(Guest:{guestChart.Count})");
         }
 
         StartCoroutine(FinishAndStartGame());

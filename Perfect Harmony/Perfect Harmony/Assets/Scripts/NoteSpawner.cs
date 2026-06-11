@@ -35,7 +35,7 @@ public class NoteSpawner : MonoBehaviour
 
         if (isSpawning && canSpawn)
         {
-            // Player 1 (Local) Spawning
+            // Player 1 (Host / Left Side) Spawning
             if (p1Index < p1SpawnEvents.Count)
             {
                 SpawnEvent nextEvent = p1SpawnEvents[p1Index];
@@ -48,7 +48,7 @@ public class NoteSpawner : MonoBehaviour
                 }
             }
 
-            // Player 2 (Remote) Spawning
+            // Player 2 (Guest / Right Side) Spawning
             if (p2Index < p2SpawnEvents.Count)
             {
                 SpawnEvent nextEvent = p2SpawnEvents[p2Index];
@@ -56,7 +56,7 @@ public class NoteSpawner : MonoBehaviour
 
                 if (RhythmGameManager.Instance.songPosition + RhythmGameManager.Instance.spawnOffset >= nextEventTime)
                 {
-                    // Remote lane is offset by 4
+                    // Guest lane is offset by 4
                     CreateNoteInstance((int)nextEvent.lane + 4, nextEvent);
                     p2Index++;
                 }
